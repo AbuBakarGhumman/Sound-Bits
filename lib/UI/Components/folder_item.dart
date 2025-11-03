@@ -67,8 +67,8 @@ class FolderItem extends StatelessWidget {
 
                 // 3. Trailing chevron icon
                 Icon(
-                  Icons.chevron_right_rounded,
-                  color: isDark ? Colors.white38 : Colors.black26,
+                  Icons.more_vert,
+                  color: isDark ? Colors.white54 : Colors.black45,
                 ),
               ],
             ),

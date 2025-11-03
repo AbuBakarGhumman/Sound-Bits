@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 import '../../Constants/app_constants.dart';
-import '../Components/album_item.dart';   // ✅ 1. IMPORT THE NEW ALBUMITEM
+import '../Components/album_item.dart';
 import '../Components/folder_item.dart';
 import '../Components/track_item.dart';
 import '../Components/splash_title.dart';
 
 class MLibraryPage extends StatefulWidget {
-  const MLibraryPage({super.key});
+  final Map<String, dynamic>? currentlyPlayingSong;
+  final bool isPlaying;
+  final Function(Map<String, dynamic>) onTrackSelected;
+
+  const MLibraryPage({
+    super.key,
+    required this.currentlyPlayingSong,
+    required this.isPlaying,
+    required this.onTrackSelected,
+  });
 
   @override
   State<MLibraryPage> createState() => _MLibraryPageState();
@@ -14,27 +23,20 @@ class MLibraryPage extends StatefulWidget {
 
 class _MLibraryPageState extends State<MLibraryPage> {
   final ScrollController _scrollController = ScrollController();
-  int selectedIndex = 2; // Start with 'Tracks' selected
+  int selectedIndex = 1;
 
   final List<String> tabs = [
-    'Favourites',
-    'Tracks',
-    'Albums',
-    'Artists',
-    'Folders',
+    'Favourites', 'Tracks', 'Albums', 'Artists', 'Folders',
   ];
-
   late final List<GlobalKey> _tabKeys;
   bool _isAutoScrolling = false;
 
-  // ... (initState, dispose, _handleScrollEnd, _centerSelectedTab methods are unchanged)
   @override
   void initState() {
     super.initState();
     _tabKeys = List.generate(tabs.length, (_) => GlobalKey());
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _centerSelectedTab(selectedIndex);
+      if (mounted) _centerSelectedTab(selectedIndex);
     });
   }
 
@@ -48,7 +50,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
     final screenCenter = MediaQuery.of(context).size.width / 2;
     double minDistance = double.infinity;
     int closestTabIndex = selectedIndex;
-
     for (int i = 0; i < _tabKeys.length; i++) {
       final keyContext = _tabKeys[i].currentContext;
       if (keyContext != null) {
@@ -56,20 +57,18 @@ class _MLibraryPageState extends State<MLibraryPage> {
         final position = renderBox.localToGlobal(Offset.zero);
         final tabCenter = position.dx + renderBox.size.width / 2;
         final distance = (tabCenter - screenCenter).abs();
-
         if (distance < minDistance) {
           minDistance = distance;
           closestTabIndex = i;
         }
       }
     }
-
     if (selectedIndex != closestTabIndex) {
       setState(() {
         selectedIndex = closestTabIndex;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _centerSelectedTab(closestTabIndex);
+        if (mounted) _centerSelectedTab(closestTabIndex);
       });
     }
   }
@@ -81,7 +80,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
       _isAutoScrolling = false;
       return;
     }
-
     final RenderBox renderBox = keyContext.findRenderObject() as RenderBox;
     final itemWidth = renderBox.size.width;
     final itemPosition = renderBox.localToGlobal(Offset.zero);
@@ -90,7 +88,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
     final targetOffset = itemPosition.dx - (screenWidth / 2) + (itemWidth / 2);
     final newScrollOffset = (scrollOffset + targetOffset)
         .clamp(0.0, _scrollController.position.maxScrollExtent);
-
     _scrollController.animateTo(
       newScrollOffset,
       duration: const Duration(milliseconds: 300),
@@ -100,21 +97,18 @@ class _MLibraryPageState extends State<MLibraryPage> {
     });
   }
 
-
-  // ✅ 2. THIS METHOD IS NOW REFACTORED TO RETURN DIFFERENT SCROLLABLE WIDGETS
   Widget _buildContent(String sectionTitle, bool isDark) {
-    // The switch statement now returns a complete widget (GridView or ListView)
     switch (sectionTitle) {
       case 'Albums':
         return GridView.builder(
-          key: const ValueKey('albums_grid'), // Key for AnimatedSwitcher
+          key: const ValueKey('albums_grid'),
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
           itemCount: 20,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,      // Two columns
-            crossAxisSpacing: 16.0, // Horizontal space between items
-            mainAxisSpacing: 16.0,  // Vertical space between items
-            childAspectRatio: 1 / 1.4, // Adjust for item height (width / height)
+            crossAxisCount: 2,
+            crossAxisSpacing: 16.0,
+            mainAxisSpacing: 16.0,
+            childAspectRatio: 1 / 1.4,
           ),
           itemBuilder: (context, itemIndex) {
             return AlbumItem(
@@ -125,7 +119,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
             );
           },
         );
-
       case 'Folders':
         return ListView.builder(
           key: const ValueKey('folders_list'),
@@ -140,21 +133,30 @@ class _MLibraryPageState extends State<MLibraryPage> {
             );
           },
         );
-
       case 'Tracks':
       case 'Favourites':
       case 'Artists':
       default:
         return ListView.builder(
-          key: const ValueKey('tracks_list'),
+          key: ValueKey('tracks_list_$sectionTitle'),
           padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
           itemCount: 20,
           itemBuilder: (context, itemIndex) {
+            final songData = {
+              'title': '$sectionTitle Song Title ${itemIndex + 1}',
+              'artist': 'Artist Name',
+            };
+            final bool isSelected = widget.currentlyPlayingSong != null &&
+                widget.currentlyPlayingSong!['title'] == songData['title'];
             return TrackItem(
-              songTitle: '$sectionTitle Song Title ${itemIndex + 1}',
-              artistName: 'Artist Name',
+              songTitle: songData['title']!,
+              artistName: songData['artist']!,
               isDark: isDark,
-              onTap: () {},
+              isSelected: isSelected,
+              isPlaying: isSelected && widget.isPlaying,
+              onTap: () {
+                widget.onTrackSelected(songData);
+              },
               onMoreTap: () {},
             );
           },
@@ -173,7 +175,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 5.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -204,7 +206,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
               onNotification: (ScrollNotification notification) {
                 if (notification is ScrollEndNotification && !_isAutoScrolling) {
                   Future.delayed(const Duration(milliseconds: 100), () {
-                    if (!_isAutoScrolling) _handleScrollEnd();
+                    if (!_isAutoScrolling && mounted) _handleScrollEnd();
                   });
                 }
                 return true;
@@ -253,7 +255,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
               child: Container(
                 key: ValueKey<int>(selectedIndex),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.grey[900] : Colors.grey[200],
+                  color: isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(24.0),
                     topRight: Radius.circular(24.0),

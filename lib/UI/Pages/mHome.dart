@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../Constants/app_constants.dart';
+import '../Components/recently_played_card.dart';
 import '../Components/splash_title.dart';
 import '../Components/recommended_item.dart';
 
@@ -11,6 +12,12 @@ class MHomePage extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
+
+    // Dummy data for the list
+    final List<Map<String, dynamic>> recentlyPlayedItems = List.generate(
+      6,
+          (i) => {'title': 'Track Title ${i + 1}'},
+    );
 
     return SafeArea(
       bottom: false,
@@ -38,10 +45,9 @@ class MHomePage extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          // We use Expanded + CustomScrollView to make the rest of the page scrollable
           Expanded(
             child: ScrollConfiguration(
-              behavior: NoGlowScrollBehavior(), // This removes the overscroll effect
+              behavior: NoGlowScrollBehavior(),
               child: CustomScrollView(
                 slivers: [
                   // SLIVER 1: The 'Recently Played' section that scrolls away.
@@ -51,7 +57,7 @@ class MHomePage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          /// 🏆 Recently Played Section
+                          /// 🏆 Recently Played Section Header
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -68,24 +74,24 @@ class MHomePage extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 12),
+
+                          /// 📜 Horizontal List
                           SizedBox(
-                            height: screenHeight * 0.22,
+                            // ✅ REDUCED HEIGHT to match the new, shorter card design
+                            height: screenHeight * 0.18,
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
-                              itemCount: 6,
+                              itemCount: recentlyPlayedItems.length,
                               separatorBuilder: (_, __) => const SizedBox(width: 15),
                               itemBuilder: (context, index) {
-                                return Container(
-                                  width: screenWidth * 0.35,
-                                  decoration: BoxDecoration(color: isDark ? Colors.grey[900] : Colors.grey[200], borderRadius: BorderRadius.circular(16)),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.music_note_rounded, size: screenWidth * 0.15, color: isDark ? Colors.white : Colors.grey[800]),
-                                      const SizedBox(height: 10),
-                                      Text('Track ${index + 1}', style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.w500)),
-                                    ],
-                                  ),
+                                final item = recentlyPlayedItems[index];
+                                return RecentlyPlayedCard(
+                                  title: item['title'] as String,
+                                  isDark: isDark,
+                                  onTap: () {
+                                    // TODO: Implement tap action
+                                    print('${item['title']} tapped!');
+                                  },
                                 );
                               },
                             ),
@@ -98,11 +104,10 @@ class MHomePage extends StatelessWidget {
 
                   // SLIVER 2: THE STICKY HEADER for 'Recommended For You'
                   SliverPersistentHeader(
-                    pinned: true, // This is what makes it stick!
+                    pinned: true,
                     delegate: _StickyHeaderDelegate(
                       height: 56.0,
                       child: Container(
-                        // Using the scaffold background color is more robust than hardcoding black/white
                         color: isDark ? Colors.black : Colors.white,
                         height: 56.0,
                         padding: const EdgeInsets.symmetric(horizontal: 10.0),
@@ -158,7 +163,7 @@ class MHomePage extends StatelessWidget {
   }
 }
 
-/// A delegate for creating sticky headers in a CustomScrollView.
+// Delegate and ScrollBehavior classes remain unchanged
 class _StickyHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
   final double height;
@@ -182,7 +187,6 @@ class _StickyHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
-/// A custom scroll behavior that removes the overscroll glow/bounce effect.
 class NoGlowScrollBehavior extends ScrollBehavior {
   @override
   Widget buildOverscrollIndicator(

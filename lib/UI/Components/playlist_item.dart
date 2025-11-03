@@ -56,7 +56,7 @@ class PlaylistItem extends StatelessWidget {
                       Text(
                         playlistName,
                         style: TextStyle(
-                          fontSize: screenWidth * 0.045,
+                          fontSize: screenWidth * 0.040,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -64,9 +64,7 @@ class PlaylistItem extends StatelessWidget {
                       Text(
                         '$songCount songs',
                         style: TextStyle(
-                          color: isDark
-                              ? Colors.white70
-                              : Colors.black.withOpacity(0.7),
+                          color: isDark ? Colors.white70 : Colors.black.withOpacity(0.7),
                         ),
                       ),
                     ],
@@ -75,9 +73,8 @@ class PlaylistItem extends StatelessWidget {
 
                 // 3. Trailing Icon
                 Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 18,
-                  color: isDark ? Colors.white70 : Colors.black54,
+                  Icons.more_vert,
+                  color: isDark ? Colors.white54 : Colors.black45,
                 ),
               ],
             ),
