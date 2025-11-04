@@ -7,7 +7,7 @@ class NowPlayingBar extends StatefulWidget {
   final String? coverUrl;
   final bool isPlaying;
   final VoidCallback onPlayPause;
-  final VoidCallback onTap;
+  final VoidCallback onOpenFullPlayer;
 
   const NowPlayingBar({
     super.key,
@@ -16,7 +16,7 @@ class NowPlayingBar extends StatefulWidget {
     this.coverUrl,
     required this.isPlaying,
     required this.onPlayPause,
-    required this.onTap,
+    required this.onOpenFullPlayer,
   });
 
   @override
@@ -30,35 +30,69 @@ class _NowPlayingBarState extends State<NowPlayingBar>
   bool _collapseToRight = false;
   double _dragStartX = 0.0;
 
+  // Pending state for gesture
+  bool _pendingCollapsed = false;
+  bool _pendingCollapseToRight = false;
+
+  late final ScrollController _scrollController;
+  bool _isOverflowing = false;
+  final GlobalKey _textKey = GlobalKey();
+  double _titleWidth = 0;
+
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 1),
     );
 
     if (widget.isPlaying) {
       _controller.repeat();
     }
+
+    _scrollController = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
   }
 
   @override
-  void didUpdateWidget(NowPlayingBar oldWidget) {
+  void didUpdateWidget(covariant NowPlayingBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying != oldWidget.isPlaying) {
-      if (widget.isPlaying) {
-        _controller.repeat();
-      } else {
-        _controller.stop();
-      }
+
+    if (widget.isPlaying && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.isPlaying && _controller.isAnimating) {
+      _controller.stop();
     }
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void _checkOverflow() {
+    if (!mounted || _isCollapsed) return;
+    final textContext = _textKey.currentContext;
+    if (textContext != null) {
+      final renderBox = textContext.findRenderObject() as RenderBox;
+      _titleWidth = renderBox.size.width;
+
+      final availableWidth = context.size!.width -
+          (MediaQuery.of(context).size.width * 0.12 + 8 + 16 + 50);
+
+      _isOverflowing = _titleWidth > availableWidth;
+      if (_isOverflowing) _startMarquee();
+    }
+  }
+
+  void _startMarquee() async {
+    if (!_isOverflowing || !_scrollController.hasClients) return;
+    while (mounted && !_isCollapsed) {
+      await _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: Duration(
+          seconds: ((_titleWidth - _scrollController.position.viewportDimension) ~/ 20),
+        ),
+        curve: Curves.linear,
+      );
+      _scrollController.jumpTo(0);
+    }
   }
 
   void _handleDragStart(DragStartDetails details) {
@@ -69,169 +103,174 @@ class _NowPlayingBarState extends State<NowPlayingBar>
     final delta = details.globalPosition.dx - _dragStartX;
 
     if (delta < -10 && !_isCollapsed) {
-      setState(() {
-        _isCollapsed = true;
-        _collapseToRight = false;
-      });
+      _pendingCollapsed = true;
+      _pendingCollapseToRight = false;
     } else if (delta > 10 && !_isCollapsed) {
-      setState(() {
-        _isCollapsed = true;
-        _collapseToRight = true;
-      });
-    } else if (delta.abs() > 10 && _isCollapsed) {
-      setState(() => _isCollapsed = false);
+      _pendingCollapsed = true;
+      _pendingCollapseToRight = true;
+    } else if (delta.abs() <= 10) {
+      _pendingCollapsed = false;
     }
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    if (_pendingCollapsed != _isCollapsed || _pendingCollapseToRight != _collapseToRight) {
+      setState(() {
+        _isCollapsed = _pendingCollapsed;
+        _collapseToRight = _pendingCollapseToRight;
+      });
+      if (!_isCollapsed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
-
-    final collapsedWidth = screenWidth * 0.38;
     final expandedWidth = screenWidth - 20;
+
+    final barContent = Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: widget.coverUrl != null
+                ? Image.network(
+              widget.coverUrl!,
+              width: screenWidth * 0.12,
+              height: screenWidth * 0.12,
+              fit: BoxFit.cover,
+            )
+                : Container(
+              width: screenWidth * 0.12,
+              height: screenWidth * 0.12,
+              color: isDark ? Colors.white24 : Colors.black12,
+              child: Icon(
+                Icons.music_note_rounded,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (!_isCollapsed)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: screenWidth * 0.05,
+                    child: _isOverflowing
+                        ? ListView(
+                      controller: _scrollController,
+                      scrollDirection: Axis.horizontal,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        Text(
+                          widget.songTitle,
+                          key: _textKey,
+                          style: TextStyle(
+                            fontSize: screenWidth * 0.04,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    )
+                        : Text(
+                      widget.songTitle,
+                      key: _textKey,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.04,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    widget.artistName,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: screenWidth * 0.033,
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          IconButton(
+            icon: Icon(
+              widget.isPlaying
+                  ? Icons.pause_circle_filled
+                  : Icons.play_circle_fill,
+              size: screenWidth * 0.09,
+              color: const Color(0xFFD8512B),
+            ),
+            onPressed: widget.onPlayPause,
+          ),
+        ],
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: GestureDetector(
         onHorizontalDragStart: _handleDragStart,
         onHorizontalDragUpdate: _handleDragUpdate,
+        onHorizontalDragEnd: _handleDragEnd,
         child: InkWell(
-          onTap: widget.onTap,
+          onTap: widget.onOpenFullPlayer,
           borderRadius: BorderRadius.circular(16),
           child: AnimatedAlign(
             alignment: _isCollapsed
-                ? (_collapseToRight
-                ? Alignment.centerRight
-                : Alignment.centerLeft)
+                ? (_collapseToRight ? Alignment.centerRight : Alignment.centerLeft)
                 : Alignment.center,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
+            duration: const Duration(milliseconds: 800),
+            curve: Curves.easeInOutCubic,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              width: _isCollapsed ? collapsedWidth : expandedWidth,
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.easeInOutCubic,
+              width: _isCollapsed ? null : expandedWidth,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    return Container(
-                      padding: const EdgeInsets.all(2.0),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: const [
-                            Color(0xFFD8512B),
-                            Colors.purple,
-                            Colors.cyan,
-                            Colors.green,
-                            Color(0xFFD8512B),
-                          ],
-                          stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
-                          transform: GradientRotation(
-                              _controller.value * 2 * math.pi),
-                        ),
-                      ),
-                      child: child,
-                    );
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: widget.coverUrl != null
-                              ? Image.network(
-                            widget.coverUrl!,
-                            width: screenWidth * 0.12,
-                            height: screenWidth * 0.12,
-                            fit: BoxFit.cover,
-                          )
-                              : Container(
-                            width: screenWidth * 0.12,
-                            height: screenWidth * 0.12,
-                            color: isDark
-                                ? Colors.white24
-                                : Colors.black12,
-                            child: Icon(
-                              Icons.music_note_rounded,
-                              color: isDark ? Colors.white : Colors.black,
-                            ),
-                          ),
-                        ),
-                        // ✅ FIX 1: Add a SizedBox for consistent spacing.
-                        const SizedBox(width: 12),
-
-                        // ✅ FIX 2: The AnimatedSwitcher is NOT wrapped in Expanded.
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          transitionBuilder:
-                              (Widget child, Animation<double> animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SizeTransition(
-                                sizeFactor: animation,
-                                axisAlignment: -1.0,
-                                axis: Axis.horizontal,
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: !_isCollapsed
-                              ? Column(
-                            key: const ValueKey("expanded"),
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                widget.songTitle,
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  fontSize: screenWidth * 0.04,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                widget.artistName,
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                                style: TextStyle(
-                                  fontSize: screenWidth * 0.033,
-                                  color: isDark
-                                      ? Colors.white70
-                                      : Colors.black87,
-                                ),
-                              ),
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    child: barContent,
+                    builder: (context, child) {
+                      return Container(
+                        padding: const EdgeInsets.all(2.0),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: const [
+                              Color(0xFFD8512B),
+                              Colors.purple,
+                              Colors.cyan,
+                              Colors.green,
+                              Color(0xFFD8512B),
                             ],
-                          )
-                              : const SizedBox(
-                            key: ValueKey("collapsed"),
+                            stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
+                            transform: GradientRotation(_controller.value * 2 * math.pi),
                           ),
                         ),
-
-                        // ✅ FIX 3: Add a Spacer() to push the button to the end.
-                        const Spacer(),
-
-                        IconButton(
-                          icon: Icon(
-                            widget.isPlaying
-                                ? Icons.pause_circle_filled
-                                : Icons.play_circle_fill,
-                            size: screenWidth * 0.09,
-                            color: const Color(0xFFD8512B),
-                          ),
-                          onPressed: widget.onPlayPause,
-                        ),
-                      ],
-                    ),
+                        child: child,
+                      );
+                    },
                   ),
                 ),
               ),

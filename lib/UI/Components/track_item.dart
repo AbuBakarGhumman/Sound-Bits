@@ -72,12 +72,12 @@ class TrackItem extends StatelessWidget {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                artistName,
+                                artistName == "<unknown>" ? "Unknown Artist" : artistName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: isDark ? Colors.white60 : Colors.black54,
+                                  color: isSelected ? activeColor : defaultIconColor,
                                 ),
                               ),
                             ],

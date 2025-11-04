@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:on_audio_query/on_audio_query.dart';
+import 'package:path/path.dart' as p;
+
 import '../../Constants/app_constants.dart';
+import '../../Services/music_service.dart';
 import '../Components/album_item.dart';
 import '../Components/folder_item.dart';
 import '../Components/track_item.dart';
@@ -23,13 +27,28 @@ class MLibraryPage extends StatefulWidget {
 
 class _MLibraryPageState extends State<MLibraryPage> {
   final ScrollController _scrollController = ScrollController();
-  int selectedIndex = 1;
+  int selectedIndex = 1; // Default to 'Tracks'
+  int previousIndex = 1;
+
+  final MusicService _musicService = MusicService();
+
+  late Future<Map<String, List<SongModel>>> _foldersFuture;
+  late Future<List<SongModel>> _tracksFuture;
+  bool _futuresInitialized = false;
 
   final List<String> tabs = [
-    'Favourites', 'Tracks', 'Albums', 'Artists', 'Folders',
+    'Favourites',
+    'Tracks',
+    'Albums',
+    'Artists',
+    'Folders'
   ];
+
   late final List<GlobalKey> _tabKeys;
   bool _isAutoScrolling = false;
+
+  Offset _dragStart = Offset.zero;
+  Offset _dragUpdate = Offset.zero;
 
   @override
   void initState() {
@@ -38,6 +57,16 @@ class _MLibraryPageState extends State<MLibraryPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _centerSelectedTab(selectedIndex);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_futuresInitialized) {
+      _foldersFuture = _musicService.fetchFolders();
+      _tracksFuture = _musicService.fetchSongs();
+      _futuresInitialized = true;
+    }
   }
 
   @override
@@ -50,6 +79,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
     final screenCenter = MediaQuery.of(context).size.width / 2;
     double minDistance = double.infinity;
     int closestTabIndex = selectedIndex;
+
     for (int i = 0; i < _tabKeys.length; i++) {
       final keyContext = _tabKeys[i].currentContext;
       if (keyContext != null) {
@@ -63,10 +93,9 @@ class _MLibraryPageState extends State<MLibraryPage> {
         }
       }
     }
+
     if (selectedIndex != closestTabIndex) {
-      setState(() {
-        selectedIndex = closestTabIndex;
-      });
+      setState(() => selectedIndex = closestTabIndex);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _centerSelectedTab(closestTabIndex);
       });
@@ -80,87 +109,141 @@ class _MLibraryPageState extends State<MLibraryPage> {
       _isAutoScrolling = false;
       return;
     }
+
     final RenderBox renderBox = keyContext.findRenderObject() as RenderBox;
     final itemWidth = renderBox.size.width;
     final itemPosition = renderBox.localToGlobal(Offset.zero);
     final screenWidth = MediaQuery.of(context).size.width;
     final scrollOffset = _scrollController.offset;
-    final targetOffset = itemPosition.dx - (screenWidth / 2) + (itemWidth / 2);
+    final targetOffset =
+        itemPosition.dx - (screenWidth / 2) + (itemWidth / 2);
     final newScrollOffset = (scrollOffset + targetOffset)
         .clamp(0.0, _scrollController.position.maxScrollExtent);
-    _scrollController.animateTo(
+
+    _scrollController
+        .animateTo(
       newScrollOffset,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-    ).whenComplete(() {
-      _isAutoScrolling = false;
-    });
+    )
+        .whenComplete(() => _isAutoScrolling = false);
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    _dragStart = details.globalPosition;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    _dragUpdate = details.globalPosition;
+  }
+
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final dx = _dragUpdate.dx - _dragStart.dx;
+    if (dx.abs() > 50) {
+      if (dx < 0 && selectedIndex < tabs.length - 1) {
+        // Swipe Left → Next tab
+        setState(() {
+          previousIndex = selectedIndex;
+          selectedIndex++;
+        });
+        _centerSelectedTab(selectedIndex);
+      } else if (dx > 0 && selectedIndex > 0) {
+        // Swipe Right → Previous tab
+        setState(() {
+          previousIndex = selectedIndex;
+          selectedIndex--;
+        });
+        _centerSelectedTab(selectedIndex);
+      }
+    }
   }
 
   Widget _buildContent(String sectionTitle, bool isDark) {
     switch (sectionTitle) {
-      case 'Albums':
-        return GridView.builder(
-          key: const ValueKey('albums_grid'),
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 90),
-          itemCount: 20,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 16.0,
-            mainAxisSpacing: 16.0,
-            childAspectRatio: 1 / 1.4,
-          ),
-          itemBuilder: (context, itemIndex) {
-            return AlbumItem(
-              albumTitle: 'Album Name ${itemIndex + 1}',
-              artistName: 'Artist Name',
-              isDark: isDark,
-              onTap: () {},
-            );
-          },
-        );
-      case 'Folders':
-        return ListView.builder(
-          key: const ValueKey('folders_list'),
-          padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
-          itemCount: 20,
-          itemBuilder: (context, itemIndex) {
-            return FolderItem(
-              folderName: 'Downloaded Music ${itemIndex + 1}',
-              trackCount: (itemIndex + 3) * 5,
-              isDark: isDark,
-              onTap: () {},
-            );
-          },
-        );
       case 'Tracks':
+        return FutureBuilder<List<SongModel>>(
+          future: _tracksFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text("Error: ${snapshot.error}"));
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const Center(child: Text("No songs found on device."));
+            }
+
+            final songs = snapshot.data!;
+            return ListView.builder(
+              key: const ValueKey('tracks_list'),
+              padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
+              itemCount: songs.length,
+              itemBuilder: (context, index) {
+                final song = songs[index];
+                final isSelected = widget.currentlyPlayingSong != null &&
+                    widget.currentlyPlayingSong!['id'] == song.id;
+
+                return TrackItem(
+                  songTitle: song.title,
+                  artistName: song.artist ?? "Unknown Artist",
+                  isDark: isDark,
+                  isSelected: isSelected,
+                  isPlaying: isSelected && widget.isPlaying,
+                  onTap: () {
+                    widget.onTrackSelected({
+                      'id': song.id,
+                      'title': song.title,
+                      'artist': song.artist,
+                      'uri': song.uri,
+                      'data': song.data,
+                    });
+                  },
+                  onMoreTap: () {},
+                );
+              },
+            );
+          },
+        );
+
+      case 'Folders':
+        return FutureBuilder<Map<String, List<SongModel>>>(
+          future: _foldersFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const Center(child: Text("No music folders found."));
+            }
+
+            final folders = snapshot.data!;
+            final folderPaths = folders.keys.toList();
+
+            return ListView.builder(
+              key: const ValueKey('folders_list'),
+              padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
+              itemCount: folderPaths.length,
+              itemBuilder: (context, itemIndex) {
+                final folderPath = folderPaths[itemIndex];
+                final songsInFolder = folders[folderPath]!;
+
+                return FolderItem(
+                  folderName: p.basename(folderPath),
+                  trackCount: songsInFolder.length,
+                  isDark: isDark,
+                  onTap: () {},
+                );
+              },
+            );
+          },
+        );
+
+      case 'Albums':
       case 'Favourites':
       case 'Artists':
       default:
-        return ListView.builder(
-          key: ValueKey('tracks_list_$sectionTitle'),
-          padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
-          itemCount: 20,
-          itemBuilder: (context, itemIndex) {
-            final songData = {
-              'title': '$sectionTitle Song Title ${itemIndex + 1}',
-              'artist': 'Artist Name',
-            };
-            final bool isSelected = widget.currentlyPlayingSong != null &&
-                widget.currentlyPlayingSong!['title'] == songData['title'];
-            return TrackItem(
-              songTitle: songData['title']!,
-              artistName: songData['artist']!,
-              isDark: isDark,
-              isSelected: isSelected,
-              isPlaying: isSelected && widget.isPlaying,
-              onTap: () {
-                widget.onTrackSelected(songData);
-              },
-              onMoreTap: () {},
-            );
-          },
-        );
+        return Center(child: Text("$sectionTitle will be implemented here."));
     }
   }
 
@@ -169,13 +252,17 @@ class _MLibraryPageState extends State<MLibraryPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
 
+    // ✅ Fix: Reverse the direction for correct visual flow
+    final bool slideFromRight = previousIndex > selectedIndex;
+
     return SafeArea(
       bottom: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 5.0),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 5.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -203,8 +290,9 @@ class _MLibraryPageState extends State<MLibraryPage> {
           SizedBox(
             height: 45,
             child: NotificationListener<ScrollNotification>(
-              onNotification: (ScrollNotification notification) {
-                if (notification is ScrollEndNotification && !_isAutoScrolling) {
+              onNotification: (notification) {
+                if (notification is ScrollEndNotification &&
+                    !_isAutoScrolling) {
                   Future.delayed(const Duration(milliseconds: 100), () {
                     if (!_isAutoScrolling && mounted) _handleScrollEnd();
                   });
@@ -214,7 +302,8 @@ class _MLibraryPageState extends State<MLibraryPage> {
               child: ListView.builder(
                 controller: _scrollController,
                 scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: screenWidth / 2 - 60),
+                padding:
+                EdgeInsets.symmetric(horizontal: screenWidth / 2 - 60),
                 itemCount: tabs.length,
                 itemBuilder: (context, index) {
                   final isSelected = index == selectedIndex;
@@ -222,6 +311,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                     key: _tabKeys[index],
                     onTap: () {
                       setState(() {
+                        previousIndex = selectedIndex;
                         selectedIndex = index;
                       });
                       _centerSelectedTab(index);
@@ -233,7 +323,8 @@ class _MLibraryPageState extends State<MLibraryPage> {
                         duration: const Duration(milliseconds: 200),
                         style: TextStyle(
                           fontSize: isSelected ? 22 : 16,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w500,
                           color: isSelected
                               ? (isDark ? Colors.white : Colors.black)
                               : (isDark ? Colors.white54 : Colors.black54),
@@ -248,25 +339,45 @@ class _MLibraryPageState extends State<MLibraryPage> {
           ),
           const SizedBox(height: 20),
           Expanded(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, animation) =>
-                  FadeTransition(opacity: animation, child: child),
-              child: Container(
-                key: ValueKey<int>(selectedIndex),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(24.0),
-                    topRight: Radius.circular(24.0),
+            child: GestureDetector(
+              onHorizontalDragStart: _onHorizontalDragStart,
+              onHorizontalDragUpdate: _onHorizontalDragUpdate,
+              onHorizontalDragEnd: _onHorizontalDragEnd,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350),
+                transitionBuilder: (child, animation) {
+                  final offsetAnimation = Tween<Offset>(
+                    begin: slideFromRight
+                        ? const Offset(1.0, 0.0)
+                        : const Offset(-1.0, 0.0),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOut,
+                  ));
+                  return SlideTransition(
+                    position: offsetAnimation,
+                    child:
+                    FadeTransition(opacity: animation, child: child),
+                  );
+                },
+                child: Container(
+                  key: ValueKey<int>(selectedIndex),
+                  decoration: BoxDecoration(
+                    color:
+                    isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24.0),
+                      topRight: Radius.circular(24.0),
+                    ),
                   ),
-                ),
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(24.0),
-                    topRight: Radius.circular(24.0),
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(24.0),
+                      topRight: Radius.circular(24.0),
+                    ),
+                    child: _buildContent(tabs[selectedIndex], isDark),
                   ),
-                  child: _buildContent(tabs[selectedIndex], isDark),
                 ),
               ),
             ),

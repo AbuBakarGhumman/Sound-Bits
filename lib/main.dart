@@ -1,6 +1,11 @@
+import 'dart:async'; // Needed for StreamSubscription
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart'; // Needed for PlayerState
+import 'package:permission_handler/permission_handler.dart';
 import 'Constants/app_constants.dart';
+import 'Services/audio_player_service.dart'; // Import the new player service
 import 'UI/Components/now_playing_bar.dart';
+import 'UI/Pages/full_player_page.dart';
 import 'UI/Pages/splash.dart';
 import 'UI/Pages/mHome.dart';
 import 'UI/Pages/mLibrary.dart';
@@ -37,6 +42,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
+enum PermissionStatusState { checking, granted, denied }
+
 class MMainNavBar extends StatefulWidget {
   const MMainNavBar({super.key});
 
@@ -44,9 +51,14 @@ class MMainNavBar extends StatefulWidget {
   State<MMainNavBar> createState() => _MMainNavBarState();
 }
 
-class _MMainNavBarState extends State<MMainNavBar> {
-  int _selectedIndex = 0;
+class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
+  PermissionStatusState _permissionStatus = PermissionStatusState.checking;
 
+  // Get the singleton instance of our service
+  final AudioPlayerService _audioPlayerService = AudioPlayerService();
+  StreamSubscription<PlayerState>? _playerStateSubscription;
+
+  int _selectedIndex = 0;
   Map<String, dynamic>? _currentlyPlayingSong;
   bool _isPlaying = false;
   late List<Widget> _pages;
@@ -54,45 +66,79 @@ class _MMainNavBarState extends State<MMainNavBar> {
   @override
   void initState() {
     super.initState();
-    _buildPages();
+    _pages = [];
+    WidgetsBinding.instance.addObserver(this);
+    _checkPermissionsAndLoad();
+    _listenToPlayerState(); // Start listening to the player
+  }
+
+  Future<void> _checkPermissionsAndLoad() async {
+    var status = await Permission.manageExternalStorage.status;
+    if (!status.isGranted) {
+      status = await Permission.manageExternalStorage.request();
+    }
+    if (mounted) {
+      setState(() {
+        _permissionStatus = status.isGranted ? PermissionStatusState.granted : PermissionStatusState.denied;
+      });
+      if (status.isGranted) {
+        _buildPages();
+      }
+    }
+  }
+
+  void _listenToPlayerState() {
+    _playerStateSubscription = _audioPlayerService.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = state.playing;
+          if (state.processingState == ProcessingState.completed) {
+            _isPlaying = false;
+          }
+        });
+        _buildPages();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _playerStateSubscription?.cancel();
+    _audioPlayerService.dispose();
+    super.dispose();
   }
 
   void _onItemTapped(int index) {
     setState(() => _selectedIndex = index);
   }
 
-  // ✅ ENHANCED LOGIC: Handles both switching tracks and toggling play/pause
   void _onTrackSelected(Map<String, dynamic> song) {
     setState(() {
-      // Check if the tapped song is the same as the currently playing one
-      if (_currentlyPlayingSong != null && _currentlyPlayingSong!['title'] == song['title']) {
-        // If it is, just toggle the play/pause state
-        _isPlaying = !_isPlaying;
+      if (_currentlyPlayingSong != null && _currentlyPlayingSong!['id'] == song['id']) {
+        _togglePlayPause();
       } else {
-        // If it's a new song, switch to it and start playing
         _currentlyPlayingSong = song;
-        _isPlaying = true;
+        _audioPlayerService.play(song);
       }
-      _buildPages(); // Rebuild pages to pass down the new state
+      _buildPages();
     });
   }
 
-  // This is called by NowPlayingBar
   void _togglePlayPause() {
     if (_currentlyPlayingSong != null) {
-      setState(() {
-        _isPlaying = !_isPlaying;
-        _buildPages(); // Rebuild pages to update the amplifier/pause icon in the list
-      });
+      if (_isPlaying) {
+        _audioPlayerService.pause();
+      } else {
+        _audioPlayerService.resume();
+      }
     }
   }
 
-  // Helper to rebuild the list of pages with the latest state
   void _buildPages() {
     _pages = [
       const MHomePage(),
       const MPlaylistsPage(),
-      // Pass all the necessary state down to the library page
       MLibraryPage(
         currentlyPlayingSong: _currentlyPlayingSong,
         isPlaying: _isPlaying,
@@ -100,55 +146,107 @@ class _MMainNavBarState extends State<MMainNavBar> {
       ),
       const MDrivePage(),
     ];
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildPermissionDeniedScreen() {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Text(
+                'Permission Required',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'This app needs file access to find and play music. Please grant the permission to continue.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _checkPermissionsAndLoad,
+                child: const Text('Grant Permission'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    switch (_permissionStatus) {
+      case PermissionStatusState.checking:
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
-    return Scaffold(
-      extendBody: true,
-      backgroundColor: isDark ? Colors.black : Colors.white,
-      body: Stack(
-        children: [
-          IndexedStack(
-            index: _selectedIndex,
-            children: _pages,
-          ),
+      case PermissionStatusState.denied:
+        return _buildPermissionDeniedScreen();
 
-          if (_currentlyPlayingSong != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: kBottomNavigationBarHeight - 2,
-              child: NowPlayingBar(
-                songTitle: _currentlyPlayingSong!['title'] as String,
-                artistName: _currentlyPlayingSong!['artist'] as String,
-                isPlaying: _isPlaying,
-                onPlayPause: _togglePlayPause,
-                onTap: () { /* TODO: open full player screen */ },
+      case PermissionStatusState.granted:
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return Scaffold(
+          extendBody: true,
+          backgroundColor: isDark ? Colors.black : Colors.white,
+          body: Stack(
+            children: [
+              IndexedStack(
+                index: _selectedIndex,
+                children: _pages.isNotEmpty ? _pages : [const Center(child: CircularProgressIndicator())],
               ),
-            ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: isDark ? Colors.black : Colors.white,
-        elevation: 0,
-        selectedItemColor: const Color(0xFFD8512B),
-        unselectedItemColor: isDark ? Colors.white70 : Colors.black87,
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        showUnselectedLabels: true,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.playlist_play), label: "Playlists"),
-          BottomNavigationBarItem(icon: Icon(Icons.library_music_outlined), label: "Library"),
-          BottomNavigationBarItem(icon: Icon(Icons.cloud_off), label: "Drive"),
-        ],
-      ),
-    );
+              if (_currentlyPlayingSong != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: kBottomNavigationBarHeight - 2,
+                  child: NowPlayingBar(
+                    songTitle: _currentlyPlayingSong?['title'] ?? "No Song",
+                    artistName: _currentlyPlayingSong?['artist'] ?? "Unknown Artist",
+                    isPlaying: _isPlaying,
+                    onPlayPause: _togglePlayPause,
+                    onOpenFullPlayer: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => FullPlayerPage(
+                            songTitle: _currentlyPlayingSong?['title'] ?? "No Song",
+                            artistName: _currentlyPlayingSong?['artist'] ?? "Unknown Artist",
+                            isPlaying: _isPlaying,
+                            onPlayPause: _togglePlayPause,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+            ],
+          ),
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: isDark ? Colors.black : Colors.white,
+            elevation: 0,
+            selectedItemColor: const Color(0xFFD8512B),
+            unselectedItemColor: isDark ? Colors.white70 : Colors.black87,
+            currentIndex: _selectedIndex,
+            onTap: _onItemTapped,
+            showUnselectedLabels: true,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: "Home"),
+              BottomNavigationBarItem(icon: Icon(Icons.playlist_play), label: "Playlists"),
+              BottomNavigationBarItem(icon: Icon(Icons.library_music_outlined), label: "Library"),
+              BottomNavigationBarItem(icon: Icon(Icons.cloud_off), label: "Drive"),
+            ],
+          ),
+        );
+    }
   }
 }
