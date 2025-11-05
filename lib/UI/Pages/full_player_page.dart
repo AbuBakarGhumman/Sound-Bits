@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../Services/audio_player_service.dart';
 import 'package:marquee/marquee.dart';
 
+import '../../Services/volume_controller_service.dart';
+
 class FullPlayerPage extends StatefulWidget {
   final String songTitle;
   final String artistName;
@@ -130,7 +132,9 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
           IconButton(
             icon: const Icon(Icons.volume_up_rounded),
             color: isDark ? Colors.white70 : Colors.black87,
-            onPressed: () {},
+            onPressed: () {
+              VolumeControllerService.openSystemVolumePanel();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.more_vert_rounded),

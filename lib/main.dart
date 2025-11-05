@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'Constants/app_constants.dart';
 import 'Services/audio_player_service.dart';
+import 'Services/volume_controller_service.dart';
 import 'UI/Components/now_playing_bar.dart';
 import 'UI/Pages/full_player_page.dart';
 import 'UI/Pages/splash.dart';
@@ -16,6 +17,7 @@ import 'UI/Pages/mDrive.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  VolumeControllerService.init();
   runApp(const MyApp());
 }
 
@@ -241,6 +243,8 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
                         _currentlyPlayingSong?['artist'] == "<unknown>")
                         ? "Unknown Artist"
                         : _currentlyPlayingSong!['artist'],
+                    onNext: (){},
+                    onPrevious: (){},
                     isPlaying: _isPlaying,
                     onPlayPause: _togglePlayPause,
                     onOpenFullPlayer: () {
