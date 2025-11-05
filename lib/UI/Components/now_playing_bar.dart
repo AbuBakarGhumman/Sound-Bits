@@ -8,6 +8,8 @@ class NowPlayingBar extends StatefulWidget {
   final String? coverUrl;
   final bool isPlaying;
   final VoidCallback onPlayPause;
+  final VoidCallback onNext;
+  final VoidCallback onPrevious;
   final VoidCallback onOpenFullPlayer;
 
   const NowPlayingBar({
@@ -17,6 +19,8 @@ class NowPlayingBar extends StatefulWidget {
     this.coverUrl,
     required this.isPlaying,
     required this.onPlayPause,
+    required this.onNext,
+    required this.onPrevious,
     required this.onOpenFullPlayer,
   });
 
@@ -34,9 +38,6 @@ class _NowPlayingBarState extends State<NowPlayingBar>
   bool _pendingCollapsed = false;
   bool _pendingCollapseToRight = false;
 
-  bool _isOverflowing = false;
-  final GlobalKey _textKey = GlobalKey();
-
   @override
   void initState() {
     super.initState();
@@ -48,8 +49,6 @@ class _NowPlayingBarState extends State<NowPlayingBar>
     if (widget.isPlaying) {
       _controller.repeat();
     }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
   }
 
   @override
@@ -60,30 +59,6 @@ class _NowPlayingBarState extends State<NowPlayingBar>
       _controller.repeat();
     } else if (!widget.isPlaying && _controller.isAnimating) {
       _controller.stop();
-    }
-
-    if (oldWidget.songTitle != widget.songTitle ||
-        oldWidget.coverUrl != widget.coverUrl ||
-        oldWidget.isPlaying != widget.isPlaying) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
-    }
-  }
-
-  void _checkOverflow() {
-    if (!mounted || _isCollapsed) return;
-    final textContext = _textKey.currentContext;
-    if (textContext != null) {
-      final renderBox = textContext.findRenderObject() as RenderBox;
-      final titleWidth = renderBox.size.width;
-
-      // ✅ FIXED: use a more stable available width (previous formula undercounted space)
-      final availableWidth =
-          (context.findRenderObject() as RenderBox?)?.size.width ?? MediaQuery.of(context).size.width;
-      final usableWidth = availableWidth * 0.55; // adjust proportionally
-
-      setState(() {
-        _isOverflowing = titleWidth > usableWidth;
-      });
     }
   }
 
@@ -112,9 +87,6 @@ class _NowPlayingBarState extends State<NowPlayingBar>
         _isCollapsed = _pendingCollapsed;
         _collapseToRight = _pendingCollapseToRight;
       });
-      if (!_isCollapsed) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
-      }
     }
   }
 
@@ -139,6 +111,7 @@ class _NowPlayingBarState extends State<NowPlayingBar>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Album art
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: widget.coverUrl != null
@@ -159,30 +132,18 @@ class _NowPlayingBarState extends State<NowPlayingBar>
             ),
           ),
           const SizedBox(width: 8),
+
+          // Song details and skip buttons (hidden when collapsed)
           if (!_isCollapsed)
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Offstage(
-                    offstage: true,
-                    child: Text(
-                      widget.songTitle,
-                      key: _textKey,
-                      style: TextStyle(
-                        fontSize: screenWidth * 0.04,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.visible,
-                    ),
-                  ),
                   SizedBox(
                     height: screenWidth * 0.05,
-                    child: _isOverflowing
-                        ? Marquee(
-                      key: ValueKey(widget.songTitle), // ✅ ensures refresh
+                    child: Marquee(
+                      key: ValueKey(widget.songTitle),
                       text: widget.songTitle,
                       style: TextStyle(
                         fontSize: screenWidth * 0.04,
@@ -192,18 +153,8 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                       velocity: 35.0,
                       pauseAfterRound: const Duration(seconds: 1),
                       startPadding: 10.0,
-                      accelerationDuration:
-                      const Duration(seconds: 1),
-                      decelerationDuration:
-                      const Duration(milliseconds: 500),
-                    )
-                        : Text(
-                      widget.songTitle,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: screenWidth * 0.04,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      accelerationDuration: const Duration(seconds: 1),
+                      decelerationDuration: const Duration(milliseconds: 500),
                     ),
                   ),
                   Text(
@@ -220,6 +171,20 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                 ],
               ),
             ),
+
+          if (!_isCollapsed)
+            IconButton(
+              icon: Icon(
+                Icons.skip_previous,
+                size: screenWidth * 0.055,
+                color: const Color(0xFFD8512B),
+              ),
+              onPressed: widget.onPrevious,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+
+          // Play/pause button (always visible)
           IconButton(
             icon: Icon(
               widget.isPlaying
@@ -229,7 +194,21 @@ class _NowPlayingBarState extends State<NowPlayingBar>
               color: const Color(0xFFD8512B),
             ),
             onPressed: widget.onPlayPause,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
+
+          if (!_isCollapsed)
+            IconButton(
+              icon: Icon(
+                Icons.skip_next,
+                size: screenWidth * 0.055,
+                color: const Color(0xFFD8512B),
+              ),
+              onPressed: widget.onNext,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
         ],
       ),
     );
@@ -251,36 +230,38 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                 : Alignment.center,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeInOutCubic,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 800),
-              curve: Curves.easeInOutCubic,
-              width: _isCollapsed ? null : expandedWidth,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: RepaintBoundary(
-                  child: AnimatedBuilder(
-                    animation: _controller,
-                    child: barContent,
-                    builder: (context, child) {
-                      return Container(
-                        padding: const EdgeInsets.all(2.0),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: const [
-                              Color(0xFFD8512B),
-                              Colors.purple,
-                              Colors.cyan,
-                              Colors.green,
-                              Color(0xFFD8512B),
-                            ],
-                            stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
-                            transform: GradientRotation(
-                                _controller.value * 2 * math.pi),
+            child: IntrinsicWidth(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 800),
+                curve: Curves.easeInOutCubic,
+                width: _isCollapsed ? null : expandedWidth,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: _controller,
+                      child: barContent,
+                      builder: (context, child) {
+                        return Container(
+                          padding: const EdgeInsets.all(2.0),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: const [
+                                Color(0xFFD8512B),
+                                Colors.purple,
+                                Colors.cyan,
+                                Colors.green,
+                                Color(0xFFD8512B),
+                              ],
+                              stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
+                              transform: GradientRotation(
+                                  _controller.value * 2 * math.pi),
+                            ),
                           ),
-                        ),
-                        child: child,
-                      );
-                    },
+                          child: child,
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
