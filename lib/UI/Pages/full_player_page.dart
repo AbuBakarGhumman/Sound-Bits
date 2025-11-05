@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../Services/audio_player_service.dart';
+import 'package:marquee/marquee.dart';
 
 class FullPlayerPage extends StatefulWidget {
   final String songTitle;
@@ -20,75 +23,87 @@ class FullPlayerPage extends StatefulWidget {
 }
 
 class _FullPlayerPageState extends State<FullPlayerPage> {
+  final AudioPlayerService _audioService = AudioPlayerService();
+
   bool isShuffle = false;
   int repeatMode = 0; // 0 = off, 1 = repeat all, 2 = repeat one
-  late bool isPlayingLocal;
   bool isFavorite = false;
+  bool isPlayingLocal = false;
 
-  double currentPosition = 0;
-  double totalDuration = 158; // example: 2:38 min
-  Timer? progressTimer;
+  Duration currentPosition = Duration.zero;
+  Duration totalDuration = Duration.zero;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration?>? _durationSub;
 
   @override
   void initState() {
     super.initState();
     isPlayingLocal = widget.isPlaying;
-    if (isPlayingLocal) startProgressTimer();
-  }
 
-  @override
-  void dispose() {
-    progressTimer?.cancel();
-    super.dispose();
-  }
+    _loadPlayerSettings(); // 🔸 Load saved shuffle & repeat states
 
-  void startProgressTimer() {
-    progressTimer?.cancel();
-    progressTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (isPlayingLocal) {
-        setState(() {
-          if (currentPosition < totalDuration) {
-            currentPosition++;
-          } else {
-            if (repeatMode == 2) {
-              // repeat one
-              currentPosition = 0;
-            } else if (repeatMode == 1) {
-              // repeat all - reset to start
-              currentPosition = 0;
-            } else {
-              // stop at end
-              isPlayingLocal = false;
-              timer.cancel();
-            }
-          }
-        });
+    _positionSub = _audioService.positionStream.listen((pos) {
+      if (mounted) {
+        setState(() => currentPosition = pos);
+      }
+    });
+
+    _durationSub = _audioService.durationStream.listen((dur) {
+      if (mounted && dur != null) {
+        setState(() => totalDuration = dur);
       }
     });
   }
 
-  void toggleShuffle() => setState(() => isShuffle = !isShuffle);
-  void toggleRepeat() => setState(() => repeatMode = (repeatMode + 1) % 3);
+  // 🔸 Load shuffle and repeat states from SharedPreferences
+  Future<void> _loadPlayerSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      isShuffle = prefs.getBool('isShuffle') ?? false;
+      repeatMode = prefs.getInt('repeatMode') ?? 0;
+    });
+    _audioService.setRepeatMode(repeatMode);
+  }
+
+  // 🔸 Save shuffle and repeat states to SharedPreferences
+  Future<void> _savePlayerSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isShuffle', isShuffle);
+    await prefs.setInt('repeatMode', repeatMode);
+  }
+
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    super.dispose();
+  }
+
+  void toggleShuffle() {
+    setState(() => isShuffle = !isShuffle);
+    _savePlayerSettings(); // 🔸 Save on change
+  }
+
+  void toggleRepeat() {
+    setState(() {
+      repeatMode = (repeatMode + 1) % 3;
+    });
+    _audioService.setRepeatMode(repeatMode);
+    _savePlayerSettings(); // 🔸 Save on change
+  }
+
   void toggleFavorite() => setState(() => isFavorite = !isFavorite);
 
   void handlePlayPause() {
-    setState(() {
-      isPlayingLocal = !isPlayingLocal;
-    });
-
+    setState(() => isPlayingLocal = !isPlayingLocal);
     widget.onPlayPause();
-
-    if (isPlayingLocal) {
-      startProgressTimer();
-    } else {
-      progressTimer?.cancel();
-    }
   }
 
-  String formatTime(double seconds) {
-    int m = (seconds ~/ 60);
-    int s = (seconds % 60).toInt();
-    return "$m:${s.toString().padLeft(2, '0')}";
+  String formatTime(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$minutes:$seconds";
   }
 
   @override
@@ -106,6 +121,11 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
           color: isDark ? Colors.white70 : Colors.black87,
           onPressed: () => Navigator.pop(context),
         ),
+        centerTitle: true,
+        title: const Text(
+          "Now Playing",
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.volume_up_rounded),
@@ -118,11 +138,6 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
             onPressed: () {},
           ),
         ],
-        centerTitle: true,
-        title: const Text(
-          "Now Playing",
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
@@ -139,30 +154,51 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
               ),
             ),
             const SizedBox(height: 25),
-            Text(
-              widget.songTitle,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: SizedBox(
+                height: 30,
+                child: widget.songTitle.length > 25
+                    ? Marquee(
+                  text: widget.songTitle,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                  blankSpace: 40.0,
+                  velocity: 35.0,
+                  pauseAfterRound: const Duration(seconds: 1),
+                  startPadding: 10.0,
+                  accelerationDuration: const Duration(seconds: 1),
+                  decelerationDuration: const Duration(milliseconds: 500),
+                )
+                    : Text(
+                  widget.songTitle,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              widget.artistName == "<unknown>" ? "Unknown Artist" : widget.artistName,
+              widget.artistName == "<unknown>"
+                  ? "Unknown Artist"
+                  : widget.artistName,
               style: TextStyle(
                 fontSize: 15,
                 color: isDark ? Colors.white70 : Colors.black54,
               ),
             ),
-            const SizedBox(height: 25),
-
-            // Top action row (music icon, heart, add)
+            const SizedBox(height: 65),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 IconButton(
                   icon: const Icon(Icons.music_note_outlined),
@@ -171,7 +207,7 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                 ),
                 IconButton(
                   icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border),
-                  color: isFavorite ? color : Colors.grey,
+                  color: isFavorite ? const Color(0xFF8C0D0D) : Colors.grey,
                   onPressed: toggleFavorite,
                 ),
                 IconButton(
@@ -181,47 +217,49 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                 ),
               ],
             ),
-
-            // Progress bar
+            const SizedBox(height: 20),
             Slider(
-              value: currentPosition,
-              max: totalDuration,
+              value: currentPosition.inMilliseconds.toDouble().clamp(
+                  0.0, totalDuration.inMilliseconds.toDouble().clamp(0.0, 999999999.0)),
+              max: totalDuration.inMilliseconds.toDouble() == 0
+                  ? 1
+                  : totalDuration.inMilliseconds.toDouble(),
               activeColor: color,
               inactiveColor: Colors.grey.shade700,
               onChanged: (value) {
-                setState(() => currentPosition = value);
+                setState(() {
+                  currentPosition = Duration(milliseconds: value.toInt());
+                });
               },
-              onChangeStart: (_) => progressTimer?.cancel(),
-              onChangeEnd: (_) {
-                if (isPlayingLocal) startProgressTimer();
+              onChangeEnd: (value) {
+                _audioService.seek(Duration(milliseconds: value.toInt()));
               },
             ),
-
-            // Time labels
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  formatTime(currentPosition),
-                  style: TextStyle(
-                    color: isDark ? Colors.white70 : Colors.black54,
-                    fontSize: 13,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 25.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    formatTime(currentPosition),
+                    style: TextStyle(
+                      color: isDark ? Colors.white70 : Colors.black54,
+                      fontSize: 13,
+                    ),
                   ),
-                ),
-                Text(
-                  formatTime(totalDuration),
-                  style: TextStyle(
-                    color: isDark ? Colors.white70 : Colors.black54,
-                    fontSize: 13,
+                  Text(
+                    formatTime(totalDuration),
+                    style: TextStyle(
+                      color: isDark ? Colors.white70 : Colors.black54,
+                      fontSize: 13,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
-
-            // Playback controls
+            const SizedBox(height: 30),
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 IconButton(
                   icon: Icon(
@@ -267,7 +305,6 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                 ),
               ],
             ),
-            const Spacer(),
           ],
         ),
       ),

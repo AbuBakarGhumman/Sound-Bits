@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:marquee/marquee.dart';
 
 class NowPlayingBar extends StatefulWidget {
   final String songTitle;
@@ -30,14 +31,11 @@ class _NowPlayingBarState extends State<NowPlayingBar>
   bool _collapseToRight = false;
   double _dragStartX = 0.0;
 
-  // Pending state for gesture
   bool _pendingCollapsed = false;
   bool _pendingCollapseToRight = false;
 
-  late final ScrollController _scrollController;
   bool _isOverflowing = false;
   final GlobalKey _textKey = GlobalKey();
-  double _titleWidth = 0;
 
   @override
   void initState() {
@@ -51,7 +49,6 @@ class _NowPlayingBarState extends State<NowPlayingBar>
       _controller.repeat();
     }
 
-    _scrollController = ScrollController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
   }
 
@@ -64,6 +61,12 @@ class _NowPlayingBarState extends State<NowPlayingBar>
     } else if (!widget.isPlaying && _controller.isAnimating) {
       _controller.stop();
     }
+
+    if (oldWidget.songTitle != widget.songTitle ||
+        oldWidget.coverUrl != widget.coverUrl ||
+        oldWidget.isPlaying != widget.isPlaying) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkOverflow());
+    }
   }
 
   void _checkOverflow() {
@@ -71,27 +74,16 @@ class _NowPlayingBarState extends State<NowPlayingBar>
     final textContext = _textKey.currentContext;
     if (textContext != null) {
       final renderBox = textContext.findRenderObject() as RenderBox;
-      _titleWidth = renderBox.size.width;
+      final titleWidth = renderBox.size.width;
 
-      final availableWidth = context.size!.width -
-          (MediaQuery.of(context).size.width * 0.12 + 8 + 16 + 50);
+      // ✅ FIXED: use a more stable available width (previous formula undercounted space)
+      final availableWidth =
+          (context.findRenderObject() as RenderBox?)?.size.width ?? MediaQuery.of(context).size.width;
+      final usableWidth = availableWidth * 0.55; // adjust proportionally
 
-      _isOverflowing = _titleWidth > availableWidth;
-      if (_isOverflowing) _startMarquee();
-    }
-  }
-
-  void _startMarquee() async {
-    if (!_isOverflowing || !_scrollController.hasClients) return;
-    while (mounted && !_isCollapsed) {
-      await _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: Duration(
-          seconds: ((_titleWidth - _scrollController.position.viewportDimension) ~/ 20),
-        ),
-        curve: Curves.linear,
-      );
-      _scrollController.jumpTo(0);
+      setState(() {
+        _isOverflowing = titleWidth > usableWidth;
+      });
     }
   }
 
@@ -114,7 +106,8 @@ class _NowPlayingBarState extends State<NowPlayingBar>
   }
 
   void _handleDragEnd(DragEndDetails details) {
-    if (_pendingCollapsed != _isCollapsed || _pendingCollapseToRight != _collapseToRight) {
+    if (_pendingCollapsed != _isCollapsed ||
+        _pendingCollapseToRight != _collapseToRight) {
       setState(() {
         _isCollapsed = _pendingCollapsed;
         _collapseToRight = _pendingCollapseToRight;
@@ -128,7 +121,6 @@ class _NowPlayingBarState extends State<NowPlayingBar>
   @override
   void dispose() {
     _controller.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -173,27 +165,40 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  Offstage(
+                    offstage: true,
+                    child: Text(
+                      widget.songTitle,
+                      key: _textKey,
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.04,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                    ),
+                  ),
                   SizedBox(
                     height: screenWidth * 0.05,
                     child: _isOverflowing
-                        ? ListView(
-                      controller: _scrollController,
-                      scrollDirection: Axis.horizontal,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        Text(
-                          widget.songTitle,
-                          key: _textKey,
-                          style: TextStyle(
-                            fontSize: screenWidth * 0.04,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                        ? Marquee(
+                      key: ValueKey(widget.songTitle), // ✅ ensures refresh
+                      text: widget.songTitle,
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.04,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      blankSpace: 40.0,
+                      velocity: 35.0,
+                      pauseAfterRound: const Duration(seconds: 1),
+                      startPadding: 10.0,
+                      accelerationDuration:
+                      const Duration(seconds: 1),
+                      decelerationDuration:
+                      const Duration(milliseconds: 500),
                     )
                         : Text(
                       widget.songTitle,
-                      key: _textKey,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: screenWidth * 0.04,
@@ -202,7 +207,9 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                     ),
                   ),
                   Text(
-                    widget.artistName,
+                    widget.artistName == "<unknown>"
+                        ? "Unknown Artist"
+                        : widget.artistName,
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: TextStyle(
@@ -238,7 +245,9 @@ class _NowPlayingBarState extends State<NowPlayingBar>
           borderRadius: BorderRadius.circular(16),
           child: AnimatedAlign(
             alignment: _isCollapsed
-                ? (_collapseToRight ? Alignment.centerRight : Alignment.centerLeft)
+                ? (_collapseToRight
+                ? Alignment.centerRight
+                : Alignment.centerLeft)
                 : Alignment.center,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeInOutCubic,
@@ -265,7 +274,8 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                               Color(0xFFD8512B),
                             ],
                             stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
-                            transform: GradientRotation(_controller.value * 2 * math.pi),
+                            transform: GradientRotation(
+                                _controller.value * 2 * math.pi),
                           ),
                         ),
                         child: child,

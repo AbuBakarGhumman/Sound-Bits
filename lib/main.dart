@@ -1,9 +1,11 @@
-import 'dart:async'; // Needed for StreamSubscription
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart'; // Needed for PlayerState
+import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'Constants/app_constants.dart';
-import 'Services/audio_player_service.dart'; // Import the new player service
+import 'Services/audio_player_service.dart';
 import 'UI/Components/now_playing_bar.dart';
 import 'UI/Pages/full_player_page.dart';
 import 'UI/Pages/splash.dart';
@@ -54,7 +56,6 @@ class MMainNavBar extends StatefulWidget {
 class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
   PermissionStatusState _permissionStatus = PermissionStatusState.checking;
 
-  // Get the singleton instance of our service
   final AudioPlayerService _audioPlayerService = AudioPlayerService();
   StreamSubscription<PlayerState>? _playerStateSubscription;
 
@@ -69,8 +70,31 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     _pages = [];
     WidgetsBinding.instance.addObserver(this);
     _checkPermissionsAndLoad();
-    _listenToPlayerState(); // Start listening to the player
+    _listenToPlayerState();
+    _loadLastPlayedSong();
   }
+
+  // 🔹 Load last played song for display only, do not auto-play
+  Future<void> _loadLastPlayedSong() async {
+    final prefs = await SharedPreferences.getInstance();
+    final songData = prefs.getString('lastPlayedSong');
+    if (songData != null) {
+      final Map<String, dynamic> song = jsonDecode(songData);
+
+      // 🔹 Show Now Playing Bar immediately
+      setState(() {
+        _currentlyPlayingSong = song;
+        _isPlaying = false; // show paused
+      });
+      _buildPages();
+
+      // 🔹 Load the song in background without blocking UI
+      final songToRestore = Map<String, dynamic>.from(song);
+      songToRestore['isPlaying'] = false;
+      unawaited(_audioPlayerService.restoreSong(songToRestore));
+    }
+  }
+
 
   Future<void> _checkPermissionsAndLoad() async {
     var status = await Permission.manageExternalStorage.status;
@@ -79,7 +103,8 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     }
     if (mounted) {
       setState(() {
-        _permissionStatus = status.isGranted ? PermissionStatusState.granted : PermissionStatusState.denied;
+        _permissionStatus =
+        status.isGranted ? PermissionStatusState.granted : PermissionStatusState.denied;
       });
       if (status.isGranted) {
         _buildPages();
@@ -107,6 +132,11 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     _playerStateSubscription?.cancel();
     _audioPlayerService.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // No manual save needed; service handles auto-saving
   }
 
   void _onItemTapped(int index) {
@@ -185,10 +215,8 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     switch (_permissionStatus) {
       case PermissionStatusState.checking:
         return const Scaffold(body: Center(child: CircularProgressIndicator()));
-
       case PermissionStatusState.denied:
         return _buildPermissionDeniedScreen();
-
       case PermissionStatusState.granted:
         final isDark = Theme.of(context).brightness == Brightness.dark;
         return Scaffold(
@@ -198,7 +226,9 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
             children: [
               IndexedStack(
                 index: _selectedIndex,
-                children: _pages.isNotEmpty ? _pages : [const Center(child: CircularProgressIndicator())],
+                children: _pages.isNotEmpty
+                    ? _pages
+                    : [const Center(child: CircularProgressIndicator())],
               ),
               if (_currentlyPlayingSong != null)
                 Positioned(
@@ -207,7 +237,10 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
                   bottom: kBottomNavigationBarHeight - 2,
                   child: NowPlayingBar(
                     songTitle: _currentlyPlayingSong?['title'] ?? "No Song",
-                    artistName: _currentlyPlayingSong?['artist'] ?? "Unknown Artist",
+                    artistName: (_currentlyPlayingSong?['artist'] == null ||
+                        _currentlyPlayingSong?['artist'] == "<unknown>")
+                        ? "Unknown Artist"
+                        : _currentlyPlayingSong!['artist'],
                     isPlaying: _isPlaying,
                     onPlayPause: _togglePlayPause,
                     onOpenFullPlayer: () {
@@ -216,7 +249,10 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
                         MaterialPageRoute(
                           builder: (_) => FullPlayerPage(
                             songTitle: _currentlyPlayingSong?['title'] ?? "No Song",
-                            artistName: _currentlyPlayingSong?['artist'] ?? "Unknown Artist",
+                            artistName: (_currentlyPlayingSong?['artist'] == null ||
+                                _currentlyPlayingSong?['artist'] == "<unknown>")
+                                ? "Unknown Artist"
+                                : _currentlyPlayingSong!['artist'],
                             isPlaying: _isPlaying,
                             onPlayPause: _togglePlayPause,
                           ),
@@ -225,7 +261,6 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
                     },
                   ),
                 ),
-
             ],
           ),
           bottomNavigationBar: BottomNavigationBar(
