@@ -214,7 +214,7 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
               style:
               TextStyle(fontSize: fs(15), color: isDark ? Colors.white70 : Colors.black54),
             ),
-            SizedBox(height: h(65)),
+            SizedBox(height: h(45)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
