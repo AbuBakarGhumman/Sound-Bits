@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:flutter/services.dart'; // Required for SystemNavigator.pop
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:just_audio/just_audio.dart'; // Keep for PlayerState
 import 'Constants/app_constants.dart';
-import 'Models/song_object.dart'; // ✅ Import Song object
-import 'Services/audio_player_service.dart';
+import 'Models/song_object.dart';
 import 'Services/volume_controller_service.dart';
+import 'Services/engine_service.dart';
 import 'UI/Components/now_playing_bar.dart';
 import 'UI/Pages/full_player_page.dart';
 import 'UI/Pages/splash.dart';
@@ -59,216 +58,234 @@ class MMainNavBar extends StatefulWidget {
 class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
   PermissionStatusState _permissionStatus = PermissionStatusState.checking;
 
-  final AudioPlayerService _audioPlayerService = AudioPlayerService();
+  final EngineService _engine = EngineService();
+  StreamSubscription<Song?>? _nowPlayingSubscription;
   StreamSubscription<PlayerState>? _playerStateSubscription;
 
   int _selectedIndex = 0;
-  Song? _currentlyPlayingSong; // ✅ Use Song object
+  Song? _currentlyPlayingSong;
   bool _isPlaying = false;
-  late List<Widget> _pages;
+  final bool _showNowPlayingBar = true;
 
   @override
   void initState() {
     super.initState();
-    _pages = [];
     WidgetsBinding.instance.addObserver(this);
-    _checkPermissionsAndLoad();
-    _listenToPlayerState();
-    _loadLastPlayedSong();
+    _listenToEngineStreams();
+    _checkPermissionsAndRestore();
   }
 
-  Future<void> _loadLastPlayedSong() async {
-    final prefs = await SharedPreferences.getInstance();
-    final songData = prefs.getString('lastPlayedSong');
-    if (songData != null) {
-      final songMap = jsonDecode(songData) as Map<String, dynamic>;
-      final song = Song.fromMap(songMap); // ✅ Convert JSON to Song object
-
-      setState(() {
-        _currentlyPlayingSong = song;
-        _isPlaying = false;
-      });
-      _buildPages();
-
-      unawaited(_audioPlayerService.restoreSong(song));
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _engine.saveCurrentSession(); // Save session on background
+      // Dispose engine and stop player cleanly
     }
+    super.didChangeAppLifecycleState(state);
   }
 
-  Future<void> _checkPermissionsAndLoad() async {
-    var status = await Permission.manageExternalStorage.status;
-    if (!status.isGranted) {
-      status = await Permission.manageExternalStorage.request();
+  void _listenToEngineStreams() {
+    _nowPlayingSubscription = _engine.nowPlayingStream.listen((song) {
+      if (mounted) setState(() => _currentlyPlayingSong = song);
+    });
+    _playerStateSubscription = _engine.playerStateStream.listen((state) {
+      if (mounted) setState(() => _isPlaying = state.playing);
+    });
+  }
+
+  Future<void> _checkPermissionsAndRestore() async {
+    var statusManage = await Permission.manageExternalStorage.status;
+    var statusStorage = await Permission.storage.status;
+
+    if (!statusManage.isGranted) {
+      statusManage = await Permission.manageExternalStorage.request();
     }
+    if (!statusStorage.isGranted) {
+      statusStorage = await Permission.storage.request();
+    }
+
+    bool allGranted = statusManage.isGranted && statusStorage.isGranted;
+
     if (mounted) {
       setState(() {
-        _permissionStatus =
-        status.isGranted ? PermissionStatusState.granted : PermissionStatusState.denied;
+        _permissionStatus = allGranted
+            ? PermissionStatusState.granted
+            : PermissionStatusState.denied;
       });
-      if (status.isGranted) {
-        _buildPages();
+
+      if (_permissionStatus == PermissionStatusState.granted) {
+        await _engine.restoreLastSession();
+        if (mounted) {
+          setState(() {
+            _currentlyPlayingSong = _engine.currentSong;
+            _isPlaying = _engine.isPlaying;
+          });
+        }
       }
     }
-  }
-
-  void _listenToPlayerState() {
-    _playerStateSubscription = _audioPlayerService.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-          if (state.processingState == ProcessingState.completed) {
-            _isPlaying = false;
-          }
-        });
-        _buildPages();
-      }
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _nowPlayingSubscription?.cancel();
     _playerStateSubscription?.cancel();
-    _audioPlayerService.dispose();
+    _engine.dispose(); // Cleanly stop player and release resources
     super.dispose();
   }
 
-  void _onItemTapped(int index) {
-    setState(() => _selectedIndex = index);
+  void _onItemTapped(int index) => setState(() => _selectedIndex = index);
+
+  void _onPlaySong(
+      Song song, List<Song> allSongs, String folderName, int index) async {
+    await _engine.playFromFolder(
+        songs: allSongs, index: index, folderName: folderName);
   }
 
-  void _onTrackSelected(Song song) {
-    setState(() {
-      if (_currentlyPlayingSong != null && _currentlyPlayingSong!.uri == song.uri) {
-        _togglePlayPause();
-      } else {
-        _currentlyPlayingSong = song;
-        _audioPlayerService.play(song);
-      }
-      _buildPages();
-    });
-  }
+  void _togglePlayPause() => _engine.togglePlayPause();
+  void _skipNext() => _engine.skipNext();
+  void _skipPrevious() => _engine.skipPrevious();
 
-  void _togglePlayPause() {
-    if (_currentlyPlayingSong != null) {
-      if (_isPlaying) {
-        _audioPlayerService.pause();
-      } else {
-        _audioPlayerService.resume();
-      }
-    }
-  }
-
-  void _buildPages() {
-    _pages = [
-      const MHomePage(),
-      const MPlaylistsPage(),
-      MLibraryPage(
-        currentlyPlayingSong: _currentlyPlayingSong,
-        isPlaying: _isPlaying,
-        onTrackSelected: _onTrackSelected,
-      ),
-      const MDrivePage(),
-    ];
-    if (mounted) setState(() {});
-  }
-
-  Widget _buildPermissionDeniedScreen() {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Text(
-                'Permission Required',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'This app needs file access to find and play music. Please grant the permission to continue.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _checkPermissionsAndLoad,
-                child: const Text('Grant Permission'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _handleAppExit() async {
+    print("App exit requested! Stopping player, saving session, and closing app...");
+    await _engine.pause(); // Pause playback
+    await _engine.saveCurrentSession(); // Save queue and info
+    await _engine.dispose(); // Stop and clean audio resources
+    SystemNavigator.pop(); // Exit the app cleanly
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     switch (_permissionStatus) {
       case PermissionStatusState.checking:
-        return const Scaffold(body: Center(child: CircularProgressIndicator()));
-      case PermissionStatusState.denied:
-        return _buildPermissionDeniedScreen();
-      case PermissionStatusState.granted:
-        final isDark = Theme.of(context).brightness == Brightness.dark;
         return Scaffold(
-          extendBody: true,
           backgroundColor: isDark ? Colors.black : Colors.white,
-          body: Stack(
-            children: [
-              IndexedStack(
-                index: _selectedIndex,
-                children: _pages.isNotEmpty
-                    ? _pages
-                    : [const Center(child: CircularProgressIndicator())],
-              ),
-              if (_currentlyPlayingSong != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: kBottomNavigationBarHeight - 2,
-                  child: NowPlayingBar(
-                    song: _currentlyPlayingSong!, // ✅ Pass Song object
-                    isPlaying: _isPlaying,
-                    onPlayPause: _togglePlayPause,
-                    onNext: () {},
-                    onPrevious: () {},
-                    onOpenFullPlayer: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => FullPlayerPage(
-                            song: _currentlyPlayingSong!, // ✅ Pass Song object
-                            isPlaying: _isPlaying,
-                            onPlayPause: _togglePlayPause,
-                          ),
-                        ),
-                      );
-                    },
+          body: const Center(child: CircularProgressIndicator(color: Color(0xFFD8512B),)),
+        );
+
+      case PermissionStatusState.denied:
+        return Scaffold(
+          backgroundColor: isDark ? Colors.black : Colors.white,
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Permission Required',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black,
                   ),
                 ),
-            ],
+                const SizedBox(height: 16),
+                Text(
+                  'This app needs file access to find and play music.',
+                  style: TextStyle(
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: _checkPermissionsAndRestore,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD8512B),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Grant Permission'),
+                ),
+              ],
+            ),
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
+        );
+
+      case PermissionStatusState.granted:
+        return WillPopScope(
+          onWillPop: () async {
+            if (_selectedIndex == 0) {
+              await _handleAppExit(); // Clean exit
+              return false;
+            }
+            return true;
+          },
+          child: Scaffold(
+            extendBody: true,
             backgroundColor: isDark ? Colors.black : Colors.white,
-            elevation: 0,
-            selectedItemColor: const Color(0xFFD8512B),
-            unselectedItemColor: isDark ? Colors.white70 : Colors.black87,
-            currentIndex: _selectedIndex,
-            onTap: _onItemTapped,
-            showUnselectedLabels: true,
-            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: "Home"),
-              BottomNavigationBarItem(icon: Icon(Icons.playlist_play), label: "Playlists"),
-              BottomNavigationBarItem(icon: Icon(Icons.library_music_outlined), label: "Library"),
-              BottomNavigationBarItem(icon: Icon(Icons.cloud_off), label: "Drive"),
-            ],
+            body: Stack(
+              children: [
+                IndexedStack(
+                  index: _selectedIndex,
+                  children: [
+                    const MHomePage(),
+                    const MPlaylistsPage(),
+                    MLibraryPage(
+                      currentlyPlayingSong: _currentlyPlayingSong,
+                      isPlaying: _isPlaying,
+                      onPlaySong: _onPlaySong,
+                      onGoHome: () => setState(() => _selectedIndex = 0),
+                    ),
+                    const MDrivePage(),
+                  ],
+                ),
+                if (_showNowPlayingBar)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: kBottomNavigationBarHeight - 2,
+                    child: NowPlayingBar(
+                      song: _currentlyPlayingSong ??
+                          Song(title: 'Loading...', artist: '', uri: ''),
+                      isPlaying: _isPlaying,
+                      onPlayPause: _togglePlayPause,
+                      onNext: _skipNext,
+                      onPrevious: _skipPrevious,
+                      onOpenFullPlayer: () {
+                        if (_currentlyPlayingSong == null) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => FullPlayerPage(
+                              song: _currentlyPlayingSong!,
+                              isPlaying: _isPlaying,
+                              onPlayPause: _togglePlayPause,
+                              onNext: _skipNext,
+                              onPrevious: _skipPrevious,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+            bottomNavigationBar: BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: isDark ? Colors.black : Colors.white,
+              elevation: 0,
+              selectedItemColor: const Color(0xFFD8512B),
+              unselectedItemColor: isDark ? Colors.white70 : Colors.black87,
+              currentIndex: _selectedIndex,
+              onTap: _onItemTapped,
+              showUnselectedLabels: true,
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+              items: const [
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.home_outlined), label: "Home"),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.queue_music), label: "Playlists"),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.library_music_outlined), label: "Library"),
+                BottomNavigationBarItem(
+                    icon: Icon(Icons.cloud_off), label: "Drive"),
+              ],
+            ),
           ),
         );
     }
   }
+
 }

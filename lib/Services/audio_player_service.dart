@@ -2,14 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../Models/song_object.dart'; // ✅ Import Song
+import '../Models/song_object.dart';
 
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
   factory AudioPlayerService() => _instance;
-  AudioPlayerService._internal() {
-    _startPositionSaver();
-  }
+  AudioPlayerService._internal();
 
   final AudioPlayer _player = AudioPlayer();
 
@@ -18,98 +16,90 @@ class AudioPlayerService {
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
 
-  Duration get currentPosition => _player.position;
-  Duration get totalDuration => _player.duration ?? Duration.zero;
+  Song? _currentSong;
 
-  Song? _currentSong; // ✅ Changed to Song object
-  bool _isPlaying = false;
-  Timer? _positionSaverTimer;
+  bool get isPlaying => _player.playing;
+  Song? get currentSongObject => _currentSong;
 
-  // =========================
-  // Play a song
-  // =========================
+  // ===== Play =====
   Future<void> play(Song song) async {
     _currentSong = song;
-    _isPlaying = true;
-
     await _player.setAudioSource(AudioSource.uri(Uri.parse(song.uri)));
     await _player.play();
-
-    // Save immediately when a new song starts
-    _saveCurrentSong();
+    print("AudioPlayerService: Playing ${song.title}");
   }
 
   Future<void> pause() async {
-    _isPlaying = false;
     await _player.pause();
+    print("AudioPlayerService: Paused");
   }
 
   Future<void> resume() async {
-    _isPlaying = true;
     await _player.play();
+    print("AudioPlayerService: Resumed");
   }
 
   void seek(Duration position) => _player.seek(position);
 
-  void setRepeatMode(int mode) {
-    if (mode == 0) {
-      _player.setLoopMode(LoopMode.off);
-    } else if (mode == 1) {
-      _player.setLoopMode(LoopMode.all);
-    } else {
-      _player.setLoopMode(LoopMode.one);
-    }
+  Future<void> setRepeatMode(int mode) async {
+    // Disable internal just_audio loop mode – handled manually
+    await _player.setLoopMode(LoopMode.off);
+    print("AudioPlayerService: Repeat mode set (manual) => $mode");
   }
 
-  // =========================
-  // Restore last played song position
-  // =========================
-  Future<void> restoreLastPlayedPosition(Duration position, Duration duration) async {
-    if (_player.audioSource != null && duration.inMilliseconds > 0) {
-      await _player.seek(position);
-      // Do not auto-play, just restore
-    }
-  }
 
-  // 🔹 New method to restore entire song
-  Future<void> restoreSong(Song song, {int position = 0, bool isPlaying = false}) async {
+  Future<void> restoreSong(Song song, {bool isPlaying = false}) async {
     _currentSong = song;
-    _isPlaying = isPlaying;
-
     await _player.setAudioSource(AudioSource.uri(Uri.parse(song.uri)));
-    await _player.seek(Duration(milliseconds: position));
-
-    if (_isPlaying) {
-      await _player.play();
-    }
+    if (isPlaying) await _player.play();
+    else await _player.pause();
+    print("AudioPlayerService: Restored ${song.title}, playing: $isPlaying");
   }
 
-  // =========================
-  // Continuous position saving
-  // =========================
-  void _startPositionSaver() {
-    _positionSaverTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_currentSong != null) {
-        _saveCurrentSong();
+  Future<Map<String, dynamic>?> getRestoredSongData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? jsonStr = prefs.getString('lastPlayedSong');
+    if (jsonStr != null) {
+      try {
+        final Map<String, dynamic> map = jsonDecode(jsonStr);
+        final Song restoredSong = Song.fromMap(map['song']);
+        final List<Song> restoredQueue =
+        (map['queue'] as List<dynamic>).map((s) => Song.fromMap(s as Map<String, dynamic>)).toList();
+        return {
+          'song': restoredSong,
+          'queue': restoredQueue,
+          'folderName': map['folderName'] ?? "Unknown",
+        };
+      } catch (e) {
+        print("Error decoding lastPlayedSong from SharedPreferences: $e");
+        await prefs.remove('lastPlayedSong');
+        return null;
       }
-    });
+    }
+    return null;
   }
 
-  Future<void> _saveCurrentSong() async {
-    if (_currentSong == null) return;
+  Future<void> saveCurrentSong({List<Song>? queue, String? folderName}) async {
+    if (_currentSong == null) {
+      print("AudioPlayerService: No current song to save.");
+      return;
+    }
 
     final prefs = await SharedPreferences.getInstance();
+    final songMap = _currentSong!.toMap();
 
-    final songMap = _currentSong!.toMap(); // ✅ Convert Song to Map
-    songMap['isPlaying'] = _isPlaying;
-    songMap['position'] = currentPosition.inMilliseconds;
-    songMap['duration'] = totalDuration.inMilliseconds;
+    final Map<String, dynamic> saveMap = {
+      'song': songMap,
+      'queue': (queue ?? [_currentSong!]).map((s) => s.toMap()).toList(),
+      'folderName': folderName ?? "Unknown",
+    };
 
-    await prefs.setString('lastPlayedSong', jsonEncode(songMap));
+    await prefs.setString('lastPlayedSong', jsonEncode(saveMap));
+    print("AudioPlayerService: Session saved for ${songMap['title']}");
   }
 
-  void dispose() {
-    _positionSaverTimer?.cancel();
-    _player.dispose();
+  Future<void> dispose() async {
+    await _player.dispose();
+    print("AudioPlayerService: Disposed player.");
   }
 }

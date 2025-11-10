@@ -4,13 +4,18 @@ import '../Components/recently_played_card.dart';
 import '../Components/splash_title.dart';
 import '../Components/recommended_item.dart';
 
-// Converted back to a simple, stateless widget.
-class MHomePage extends StatelessWidget {
+class MHomePage extends StatefulWidget {
+  // We can remove onBackPressed here as it's no longer directly used for app exit from MHomePage
+  // If you still need it for other internal home page navigation, keep it, but it won't trigger app exit.
   const MHomePage({super.key});
 
   @override
+  State<MHomePage> createState() => _MHomePageState();
+}
+
+class _MHomePageState extends State<MHomePage> {
+  @override
   Widget build(BuildContext context) {
-    // This page builds its UI assuming permission has already been granted.
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
@@ -20,6 +25,7 @@ class MHomePage extends StatelessWidget {
           (i) => {'title': 'Track Title ${i + 1}'},
     );
 
+    // REMOVED WillPopScope from here
     return SafeArea(
       bottom: false,
       child: Column(
@@ -57,9 +63,18 @@ class MHomePage extends StatelessWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Recently Played', style: TextStyle(fontSize: screenWidth * 0.055, fontWeight: FontWeight.w600)),
+                              Text(
+                                'Recently Played',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.055,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                               Container(
-                                decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.black12, shape: BoxShape.circle),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white24 : Colors.black12,
+                                  shape: BoxShape.circle,
+                                ),
                                 padding: const EdgeInsets.all(6),
                                 child: InkWell(
                                   customBorder: const CircleBorder(),
@@ -96,16 +111,24 @@ class MHomePage extends StatelessWidget {
                     delegate: _StickyHeaderDelegate(
                       height: 56.0,
                       child: Container(
-                        // Use theme color to adapt to light/dark mode
                         color: isDark ? Colors.black : Colors.white,
                         height: 56.0,
                         padding: const EdgeInsets.symmetric(horizontal: 10.0),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Recommended For You', style: TextStyle(fontSize: screenWidth * 0.055, fontWeight: FontWeight.w600)),
+                            Text(
+                              'Recommended For You',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.055,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                             Container(
-                              decoration: BoxDecoration(color: isDark ? Colors.white24 : Colors.black12, shape: BoxShape.circle),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white24 : Colors.black12,
+                                shape: BoxShape.circle,
+                              ),
                               padding: const EdgeInsets.all(6),
                               child: InkWell(
                                 customBorder: const CircleBorder(),
@@ -148,23 +171,25 @@ class MHomePage extends StatelessWidget {
   }
 }
 
-// Delegate and ScrollBehavior classes remain unchanged
 class _StickyHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
   final double height;
   _StickyHeaderDelegate({required this.child, required this.height});
+
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => child;
+
   @override
   double get maxExtent => height;
+
   @override
   double get minExtent => height;
+
   @override
   bool shouldRebuild(SliverPersistentHeaderDelegate oldDelegate) => true;
 }
 
 class NoGlowScrollBehavior extends ScrollBehavior {
   @override
-  Widget buildOverscrollIndicator(
-      BuildContext context, Widget child, ScrollableDetails details) => child;
+  Widget buildOverscrollIndicator(BuildContext context, Widget child, ScrollableDetails details) => child;
 }

@@ -7,17 +7,20 @@ import '../Components/album_item.dart';
 import '../Components/folder_item.dart';
 import '../Components/track_item.dart';
 import '../Components/splash_title.dart';
+// import '../../Services/engine_service.dart'; // ❌ No direct engine import here
 
 class MLibraryPage extends StatefulWidget {
   final Song? currentlyPlayingSong; // ✅ Use Song instead of Map
   final bool isPlaying;
-  final Function(Song) onTrackSelected; // ✅ Callback passes Song
+  final VoidCallback onGoHome;
+  final Function(Song song, List<Song> allSongs, String folderName, int index) onPlaySong;
 
   const MLibraryPage({
     super.key,
     required this.currentlyPlayingSong,
     required this.isPlaying,
-    required this.onTrackSelected,
+    required this.onGoHome,
+    required this.onPlaySong,
   });
 
   @override
@@ -172,14 +175,14 @@ class _MLibraryPageState extends State<MLibraryPage> {
             }
 
             final songs = snapshot.data!;
+
             return ListView.builder(
               key: const ValueKey('tracks_list'),
               padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
               itemCount: songs.length,
               itemBuilder: (context, index) {
                 final song = songs[index];
-                final isSelected =
-                    widget.currentlyPlayingSong?.uri == song.uri;
+                final isSelected = widget.currentlyPlayingSong?.uri == song.uri;
 
                 return TrackItem(
                   songTitle: song.title,
@@ -187,7 +190,14 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   isDark: isDark,
                   isSelected: isSelected,
                   isPlaying: isSelected && widget.isPlaying,
-                  onTap: () => widget.onTrackSelected(song), // ✅ Pass object
+                  onTap: () {
+                    widget.onPlaySong(
+                      song,
+                      songs,
+                      'All Tracks',
+                      index,
+                    );
+                  },
                   onMoreTap: () {},
                 );
               },
@@ -221,7 +231,16 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   folderName: p.basename(folderPath),
                   trackCount: songsInFolder.length,
                   isDark: isDark,
-                  onTap: () {},
+                  onTap: () {
+                    if (songsInFolder.isNotEmpty) {
+                      widget.onPlaySong(
+                        songsInFolder.first,
+                        songsInFolder,
+                        p.basename(folderPath),
+                        0,
+                      );
+                    }
+                  },
                 );
               },
             );
@@ -239,134 +258,141 @@ class _MLibraryPageState extends State<MLibraryPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final bool slideFromRight = previousIndex > selectedIndex;
 
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16.0, vertical: 5.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                SplashTitle("Library", screenWidth * 0.08),
-                Container(
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white24 : Colors.black12,
-                    shape: BoxShape.circle,
-                  ),
-                  padding: const EdgeInsets.all(6),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () {},
-                    child: Icon(
-                      Icons.filter_list_rounded,
-                      color: isDark ? Colors.white : Colors.black,
-                      size: screenWidth * 0.06,
+    return WillPopScope(
+      onWillPop: () async {
+        widget.onGoHome(); // Navigate to Home tab instead of popping
+        return false;
+      },
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16.0, vertical: 5.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SplashTitle("Library", screenWidth * 0.08),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white24 : Colors.black12,
+                      shape: BoxShape.circle,
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 45,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification is ScrollEndNotification &&
-                    !_isAutoScrolling) {
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    if (!_isAutoScrolling && mounted) _handleScrollEnd();
-                  });
-                }
-                return true;
-              },
-              child: ListView.builder(
-                controller: _scrollController,
-                scrollDirection: Axis.horizontal,
-                padding:
-                EdgeInsets.symmetric(horizontal: screenWidth / 2 - 60),
-                itemCount: tabs.length,
-                itemBuilder: (context, index) {
-                  final isSelected = index == selectedIndex;
-                  return GestureDetector(
-                    key: _tabKeys[index],
-                    onTap: () {
-                      setState(() {
-                        previousIndex = selectedIndex;
-                        selectedIndex = index;
-                      });
-                      _centerSelectedTab(index);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 15),
-                      alignment: Alignment.center,
-                      child: AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 200),
-                        style: TextStyle(
-                          fontSize: isSelected ? 22 : 16,
-                          fontWeight:
-                          isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: isSelected
-                              ? (isDark ? Colors.white : Colors.black)
-                              : (isDark ? Colors.white54 : Colors.black54),
-                        ),
-                        child: Text(tabs[index]),
+                    padding: const EdgeInsets.all(6),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () {},
+                      child: Icon(
+                        Icons.filter_list_rounded,
+                        color: isDark ? Colors.white : Colors.black,
+                        size: screenWidth * 0.06,
                       ),
                     ),
-                  );
-                },
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: GestureDetector(
-              onHorizontalDragStart: _onHorizontalDragStart,
-              onHorizontalDragUpdate: _onHorizontalDragUpdate,
-              onHorizontalDragEnd: _onHorizontalDragEnd,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 350),
-                transitionBuilder: (child, animation) {
-                  final offsetAnimation = Tween<Offset>(
-                    begin: slideFromRight
-                        ? const Offset(1.0, 0.0)
-                        : const Offset(-1.0, 0.0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  ));
-                  return SlideTransition(
-                    position: offsetAnimation,
-                    child:
-                    FadeTransition(opacity: animation, child: child),
-                  );
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 45,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollEndNotification &&
+                      !_isAutoScrolling) {
+                    Future.delayed(const Duration(milliseconds: 100), () {
+                      if (!_isAutoScrolling && mounted) _handleScrollEnd();
+                    });
+                  }
+                  return true;
                 },
-                child: Container(
-                  key: ValueKey<int>(selectedIndex),
-                  decoration: BoxDecoration(
-                    color:
-                    isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24.0),
-                      topRight: Radius.circular(24.0),
+                child: ListView.builder(
+                  controller: _scrollController,
+                  scrollDirection: Axis.horizontal,
+                  padding:
+                  EdgeInsets.symmetric(horizontal: screenWidth / 2 - 60),
+                  itemCount: tabs.length,
+                  itemBuilder: (context, index) {
+                    final isSelected = index == selectedIndex;
+                    return GestureDetector(
+                      key: _tabKeys[index],
+                      onTap: () {
+                        setState(() {
+                          previousIndex = selectedIndex;
+                          selectedIndex = index;
+                        });
+                        _centerSelectedTab(index);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 15),
+                        alignment: Alignment.center,
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(
+                            fontSize: isSelected ? 22 : 16,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: isSelected
+                                ? (isDark ? Colors.white : Colors.black)
+                                : (isDark
+                                ? Colors.white54
+                                : Colors.black54),
+                          ),
+                          child: Text(tabs[index]),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: GestureDetector(
+                onHorizontalDragStart: _onHorizontalDragStart,
+                onHorizontalDragUpdate: _onHorizontalDragUpdate,
+                onHorizontalDragEnd: _onHorizontalDragEnd,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  transitionBuilder: (child, animation) {
+                    final offsetAnimation = Tween<Offset>(
+                      begin: slideFromRight
+                          ? const Offset(1.0, 0.0)
+                          : const Offset(-1.0, 0.0),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeInOut,
+                    ));
+                    return SlideTransition(
+                      position: offsetAnimation,
+                      child: FadeTransition(opacity: animation, child: child),
+                    );
+                  },
+                  child: Container(
+                    key: ValueKey<int>(selectedIndex),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(24.0),
+                        topRight: Radius.circular(24.0),
+                      ),
                     ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24.0),
-                      topRight: Radius.circular(24.0),
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(24.0),
+                        topRight: Radius.circular(24.0),
+                      ),
+                      child: _buildContent(tabs[selectedIndex], isDark),
                     ),
-                    child: _buildContent(tabs[selectedIndex], isDark),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
