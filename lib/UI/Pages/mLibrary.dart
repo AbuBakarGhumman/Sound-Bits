@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:on_audio_query/on_audio_query.dart';
 import 'package:path/path.dart' as p;
-
 import '../../Constants/app_constants.dart';
+import '../../Models/song_object.dart'; // ✅ Import your Song class
 import '../../Services/music_service.dart';
 import '../Components/album_item.dart';
 import '../Components/folder_item.dart';
@@ -10,9 +9,9 @@ import '../Components/track_item.dart';
 import '../Components/splash_title.dart';
 
 class MLibraryPage extends StatefulWidget {
-  final Map<String, dynamic>? currentlyPlayingSong;
+  final Song? currentlyPlayingSong; // ✅ Use Song instead of Map
   final bool isPlaying;
-  final Function(Map<String, dynamic>) onTrackSelected;
+  final Function(Song) onTrackSelected; // ✅ Callback passes Song
 
   const MLibraryPage({
     super.key,
@@ -27,13 +26,13 @@ class MLibraryPage extends StatefulWidget {
 
 class _MLibraryPageState extends State<MLibraryPage> {
   final ScrollController _scrollController = ScrollController();
-  int selectedIndex = 1; // Default to 'Tracks'
+  int selectedIndex = 1;
   int previousIndex = 1;
 
   final MusicService _musicService = MusicService();
 
-  late Future<Map<String, List<SongModel>>> _foldersFuture;
-  late Future<List<SongModel>> _tracksFuture;
+  late Future<Map<String, List<Song>>> _foldersFuture; // ✅ Updated type
+  late Future<List<Song>> _tracksFuture; // ✅ Updated type
   bool _futuresInitialized = false;
 
   final List<String> tabs = [
@@ -141,14 +140,12 @@ class _MLibraryPageState extends State<MLibraryPage> {
     final dx = _dragUpdate.dx - _dragStart.dx;
     if (dx.abs() > 50) {
       if (dx < 0 && selectedIndex < tabs.length - 1) {
-        // Swipe Left → Next tab
         setState(() {
           previousIndex = selectedIndex;
           selectedIndex++;
         });
         _centerSelectedTab(selectedIndex);
       } else if (dx > 0 && selectedIndex > 0) {
-        // Swipe Right → Previous tab
         setState(() {
           previousIndex = selectedIndex;
           selectedIndex--;
@@ -161,7 +158,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
   Widget _buildContent(String sectionTitle, bool isDark) {
     switch (sectionTitle) {
       case 'Tracks':
-        return FutureBuilder<List<SongModel>>(
+        return FutureBuilder<List<Song>>(
           future: _tracksFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -181,24 +178,16 @@ class _MLibraryPageState extends State<MLibraryPage> {
               itemCount: songs.length,
               itemBuilder: (context, index) {
                 final song = songs[index];
-                final isSelected = widget.currentlyPlayingSong != null &&
-                    widget.currentlyPlayingSong!['id'] == song.id;
+                final isSelected =
+                    widget.currentlyPlayingSong?.uri == song.uri;
 
                 return TrackItem(
                   songTitle: song.title,
-                  artistName: song.artist ?? "Unknown Artist",
+                  artistName: song.artist,
                   isDark: isDark,
                   isSelected: isSelected,
                   isPlaying: isSelected && widget.isPlaying,
-                  onTap: () {
-                    widget.onTrackSelected({
-                      'id': song.id,
-                      'title': song.title,
-                      'artist': song.artist,
-                      'uri': song.uri,
-                      'data': song.data,
-                    });
-                  },
+                  onTap: () => widget.onTrackSelected(song), // ✅ Pass object
                   onMoreTap: () {},
                 );
               },
@@ -207,7 +196,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
         );
 
       case 'Folders':
-        return FutureBuilder<Map<String, List<SongModel>>>(
+        return FutureBuilder<Map<String, List<Song>>>(
           future: _foldersFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -239,9 +228,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
           },
         );
 
-      case 'Albums':
-      case 'Favourites':
-      case 'Artists':
       default:
         return Center(child: Text("$sectionTitle will be implemented here."));
     }
@@ -251,8 +237,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
-
-    // ✅ Fix: Reverse the direction for correct visual flow
     final bool slideFromRight = previousIndex > selectedIndex;
 
     return SafeArea(

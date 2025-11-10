@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:marquee/marquee.dart';
+import '../../Models/song_object.dart'; // ✅ Import Song object
 
 class NowPlayingBar extends StatefulWidget {
-  final String songTitle;
-  final String artistName;
-  final String? coverUrl;
+  final Song song; // ✅ Accept Song object
   final bool isPlaying;
   final VoidCallback onPlayPause;
   final VoidCallback onNext;
@@ -14,9 +13,7 @@ class NowPlayingBar extends StatefulWidget {
 
   const NowPlayingBar({
     super.key,
-    required this.songTitle,
-    required this.artistName,
-    this.coverUrl,
+    required this.song,
     required this.isPlaying,
     required this.onPlayPause,
     required this.onNext,
@@ -114,9 +111,9 @@ class _NowPlayingBarState extends State<NowPlayingBar>
           // Album art
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: widget.coverUrl != null
+            child: widget.song.thumbnail != null
                 ? Image.network(
-              widget.coverUrl!,
+              widget.song.thumbnail!,
               width: screenWidth * 0.12,
               height: screenWidth * 0.12,
               fit: BoxFit.cover,
@@ -143,8 +140,8 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                   SizedBox(
                     height: screenWidth * 0.05,
                     child: Marquee(
-                      key: ValueKey(widget.songTitle),
-                      text: widget.songTitle,
+                      key: ValueKey(widget.song.title),
+                      text: widget.song.title,
                       style: TextStyle(
                         fontSize: screenWidth * 0.04,
                         fontWeight: FontWeight.w600,
@@ -158,9 +155,9 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                     ),
                   ),
                   Text(
-                    widget.artistName == "<unknown>"
+                    widget.song.artist == "<unknown>" || widget.song.artist.isEmpty
                         ? "Unknown Artist"
-                        : widget.artistName,
+                        : widget.song.artist,
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: TextStyle(

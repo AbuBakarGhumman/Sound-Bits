@@ -1,52 +1,48 @@
-import 'package:on_audio_query/on_audio_query.dart';
+class Song {
+  final String title;       // Song name
+  final String artist;      // Artist name
+  final String uri;         // Full file path (used for playback)
+  final String? album;      // Optional album name
+  final String? thumbnail;  // Optional album art (can be file path or base64)
 
-class SongObject {
-  final int id;
-  final String title;
-  final String? artist;
-  final String? uri;
-  final String? data;
-
-  const SongObject({
-    required this.id,
+  const Song({
     required this.title,
-    this.artist,
-    this.uri,
-    this.data,
+    required this.artist,
+    required this.uri,
+    this.album,
+    this.thumbnail,
   });
 
-  // Convert from SongModel (used when fetching from device)
-  factory SongObject.fromSongModel(SongModel song) {
-    return SongObject(
-      id: song.id,
-      title: song.title,
-      artist: song.artist,
-      uri: song.uri,
-      data: song.data,
-    );
-  }
-
-  // NEW: Convert from a Map (e.g., when loading from SharedPreferences)
-  // This factory is what solves the "'fromJson' isn't defined" error.
-  factory SongObject.fromJson(Map<String, dynamic> json) {
-    return SongObject(
-      id: json['id'],
-      title: json['title'],
-      artist: json['artist'],
-      uri: json['uri'],
-      data: json['data'],
-    );
-  }
-
-  // NEW: Convert to a Map (e.g., when saving to SharedPreferences)
-  // This method is what solves the "'toJson' isn't defined" error.
-  Map<String, dynamic> toJson() {
+  // Convert to Map (for local storage or JSON)
+  Map<String, dynamic> toMap() {
     return {
-      'id': id,
       'title': title,
       'artist': artist,
       'uri': uri,
-      'data': data,
+      'album': album,
+      'thumbnail': thumbnail,
     };
   }
+
+  // Create Song from Map
+  factory Song.fromMap(Map<String, dynamic> map) {
+    return Song(
+      title: map['title'] ?? '',
+      artist: map['artist'] ?? '',
+      uri: map['uri'] ?? '',
+      album: map['album'],
+      thumbnail: map['thumbnail'],
+    );
+  }
+
+  // Equality override for easy comparison (e.g., in favorites, queues)
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Song &&
+              runtimeType == other.runtimeType &&
+              uri == other.uri;
+
+  @override
+  int get hashCode => uri.hashCode;
 }

@@ -5,17 +5,16 @@ import '../../Services/audio_player_service.dart';
 import 'package:marquee/marquee.dart';
 
 import '../../Services/volume_controller_service.dart';
+import '../../Models/song_object.dart'; // ✅ Import Song object
 
 class FullPlayerPage extends StatefulWidget {
-  final String songTitle;
-  final String artistName;
+  final Song song; // ✅ Accept Song object
   final bool isPlaying;
   final VoidCallback onPlayPause;
 
   const FullPlayerPage({
     super.key,
-    required this.songTitle,
-    required this.artistName,
+    required this.song,
     required this.isPlaying,
     required this.onPlayPause,
   });
@@ -162,9 +161,9 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
               child: SizedBox(
                 height: 30,
-                child: widget.songTitle.length > 25
+                child: widget.song.title.length > 25
                     ? Marquee(
-                  text: widget.songTitle,
+                  text: widget.song.title,
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -178,7 +177,7 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                   decelerationDuration: const Duration(milliseconds: 500),
                 )
                     : Text(
-                  widget.songTitle,
+                  widget.song.title,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -192,9 +191,9 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
             ),
             const SizedBox(height: 6),
             Text(
-              widget.artistName == "<unknown>"
+              widget.song.artist == "<unknown>" || widget.song.artist.isEmpty
                   ? "Unknown Artist"
-                  : widget.artistName,
+                  : widget.song.artist,
               style: TextStyle(
                 fontSize: 15,
                 color: isDark ? Colors.white70 : Colors.black54,

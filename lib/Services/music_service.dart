@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path/path.dart' as p;
+import '../Models/song_object.dart';
 
 class MusicService {
   final OnAudioQuery _audioQuery = OnAudioQuery();
@@ -14,13 +15,11 @@ class MusicService {
 
   // 🔥 Request storage/audio permissions (for Android 13+ too)
   Future<bool> _checkAndRequestPermission() async {
-    // For Android 13+ you must explicitly request READ_MEDIA_AUDIO
     if (await Permission.audio.isGranted ||
         await Permission.storage.isGranted) {
       return true;
     }
 
-    // Request all possible relevant permissions
     final status = await [
       Permission.audio,
       Permission.storage,
@@ -34,8 +33,8 @@ class MusicService {
     return granted;
   }
 
-  // ✅ Fetch all songs safely
-  Future<List<SongModel>> fetchSongs() async {
+  // ✅ Fetch all songs safely (returns List<Song>)
+  Future<List<Song>> fetchSongs() async {
     if (_isFetching) {
       print("⚠️ A song fetch is already in progress. Aborting.");
       return [];
@@ -49,21 +48,32 @@ class MusicService {
 
     try {
       _isFetching = true;
-      final songs = await _audioQuery.querySongs(
+      final songModels = await _audioQuery.querySongs(
         sortType: SongSortType.DATE_ADDED,
         orderType: OrderType.DESC_OR_GREATER,
         uriType: UriType.EXTERNAL,
         ignoreCase: true,
       );
 
-      print("✅ Found ${songs.length} songs on the device.");
-      if (songs.isEmpty) {
+      print("✅ Found ${songModels.length} songs on the device.");
+      if (songModels.isEmpty) {
         print("⚠️ No songs returned by OnAudioQuery. Check file formats or permissions.");
       }
 
+      // 🔄 Convert SongModel → Song object
+      final List<Song> songs = songModels.map((song) {
+        return Song(
+          title: song.title,
+          artist: song.artist ?? "Unknown Artist",
+          uri: song.data, // full file path
+          album: song.album ?? "Unknown Album",
+          thumbnail: null, // artwork can be queried separately when needed
+        );
+      }).toList();
+
       // Optional: print first few songs for debug
       for (var song in songs.take(5)) {
-        print("🎵 ${song.title} - ${song.data}");
+        print("🎵 ${song.title} - ${song.uri}");
       }
 
       return songs;
@@ -75,17 +85,17 @@ class MusicService {
     }
   }
 
-  // ✅ Fetch songs grouped by folder
-  Future<Map<String, List<SongModel>>> fetchFolders() async {
+  // ✅ Fetch songs grouped by folder (returns Map<String, List<Song>>)
+  Future<Map<String, List<Song>>> fetchFolders() async {
     final allSongs = await fetchSongs();
     if (allSongs.isEmpty) {
       print("⚠️ No songs found, so no folders will be returned.");
       return {};
     }
 
-    final Map<String, List<SongModel>> folders = {};
+    final Map<String, List<Song>> folders = {};
     for (var song in allSongs) {
-      final directoryPath = p.dirname(song.data);
+      final directoryPath = p.dirname(song.uri);
       folders.putIfAbsent(directoryPath, () => []).add(song);
     }
 

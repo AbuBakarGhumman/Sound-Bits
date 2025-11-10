@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../Models/song_object.dart'; // ✅ Import Song
 
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
@@ -20,18 +21,18 @@ class AudioPlayerService {
   Duration get currentPosition => _player.position;
   Duration get totalDuration => _player.duration ?? Duration.zero;
 
-  Map<String, dynamic>? _currentSong;
+  Song? _currentSong; // ✅ Changed to Song object
   bool _isPlaying = false;
   Timer? _positionSaverTimer;
 
   // =========================
   // Play a song
   // =========================
-  Future<void> play(Map<String, dynamic> song) async {
+  Future<void> play(Song song) async {
     _currentSong = song;
     _isPlaying = true;
 
-    await _player.setAudioSource(AudioSource.uri(Uri.parse(song['uri'])));
+    await _player.setAudioSource(AudioSource.uri(Uri.parse(song.uri)));
     await _player.play();
 
     // Save immediately when a new song starts
@@ -71,12 +72,12 @@ class AudioPlayerService {
   }
 
   // 🔹 New method to restore entire song
-  Future<void> restoreSong(Map<String, dynamic> song) async {
+  Future<void> restoreSong(Song song, {int position = 0, bool isPlaying = false}) async {
     _currentSong = song;
-    _isPlaying = song['isPlaying'] ?? false;
+    _isPlaying = isPlaying;
 
-    await _player.setAudioSource(AudioSource.uri(Uri.parse(song['uri'])));
-    await _player.seek(Duration(milliseconds: song['position'] ?? 0));
+    await _player.setAudioSource(AudioSource.uri(Uri.parse(song.uri)));
+    await _player.seek(Duration(milliseconds: position));
 
     if (_isPlaying) {
       await _player.play();
@@ -98,13 +99,13 @@ class AudioPlayerService {
     if (_currentSong == null) return;
 
     final prefs = await SharedPreferences.getInstance();
-    final song = Map<String, dynamic>.from(_currentSong!);
 
-    song['isPlaying'] = _isPlaying;
-    song['position'] = currentPosition.inMilliseconds;
-    song['duration'] = totalDuration.inMilliseconds;
+    final songMap = _currentSong!.toMap(); // ✅ Convert Song to Map
+    songMap['isPlaying'] = _isPlaying;
+    songMap['position'] = currentPosition.inMilliseconds;
+    songMap['duration'] = totalDuration.inMilliseconds;
 
-    await prefs.setString('lastPlayedSong', jsonEncode(song));
+    await prefs.setString('lastPlayedSong', jsonEncode(songMap));
   }
 
   void dispose() {

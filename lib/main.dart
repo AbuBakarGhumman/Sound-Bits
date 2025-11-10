@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'Constants/app_constants.dart';
+import 'Models/song_object.dart'; // ✅ Import Song object
 import 'Services/audio_player_service.dart';
 import 'Services/volume_controller_service.dart';
 import 'UI/Components/now_playing_bar.dart';
@@ -62,7 +63,7 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
   StreamSubscription<PlayerState>? _playerStateSubscription;
 
   int _selectedIndex = 0;
-  Map<String, dynamic>? _currentlyPlayingSong;
+  Song? _currentlyPlayingSong; // ✅ Use Song object
   bool _isPlaying = false;
   late List<Widget> _pages;
 
@@ -76,27 +77,22 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     _loadLastPlayedSong();
   }
 
-  // 🔹 Load last played song for display only, do not auto-play
   Future<void> _loadLastPlayedSong() async {
     final prefs = await SharedPreferences.getInstance();
     final songData = prefs.getString('lastPlayedSong');
     if (songData != null) {
-      final Map<String, dynamic> song = jsonDecode(songData);
+      final songMap = jsonDecode(songData) as Map<String, dynamic>;
+      final song = Song.fromMap(songMap); // ✅ Convert JSON to Song object
 
-      // 🔹 Show Now Playing Bar immediately
       setState(() {
         _currentlyPlayingSong = song;
-        _isPlaying = false; // show paused
+        _isPlaying = false;
       });
       _buildPages();
 
-      // 🔹 Load the song in background without blocking UI
-      final songToRestore = Map<String, dynamic>.from(song);
-      songToRestore['isPlaying'] = false;
-      unawaited(_audioPlayerService.restoreSong(songToRestore));
+      unawaited(_audioPlayerService.restoreSong(song));
     }
   }
-
 
   Future<void> _checkPermissionsAndLoad() async {
     var status = await Permission.manageExternalStorage.status;
@@ -136,18 +132,13 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // No manual save needed; service handles auto-saving
-  }
-
   void _onItemTapped(int index) {
     setState(() => _selectedIndex = index);
   }
 
-  void _onTrackSelected(Map<String, dynamic> song) {
+  void _onTrackSelected(Song song) {
     setState(() {
-      if (_currentlyPlayingSong != null && _currentlyPlayingSong!['id'] == song['id']) {
+      if (_currentlyPlayingSong != null && _currentlyPlayingSong!.uri == song.uri) {
         _togglePlayPause();
       } else {
         _currentlyPlayingSong = song;
@@ -238,25 +229,17 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
                   right: 0,
                   bottom: kBottomNavigationBarHeight - 2,
                   child: NowPlayingBar(
-                    songTitle: _currentlyPlayingSong?['title'] ?? "No Song",
-                    artistName: (_currentlyPlayingSong?['artist'] == null ||
-                        _currentlyPlayingSong?['artist'] == "<unknown>")
-                        ? "Unknown Artist"
-                        : _currentlyPlayingSong!['artist'],
-                    onNext: (){},
-                    onPrevious: (){},
+                    song: _currentlyPlayingSong!, // ✅ Pass Song object
                     isPlaying: _isPlaying,
                     onPlayPause: _togglePlayPause,
+                    onNext: () {},
+                    onPrevious: () {},
                     onOpenFullPlayer: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => FullPlayerPage(
-                            songTitle: _currentlyPlayingSong?['title'] ?? "No Song",
-                            artistName: (_currentlyPlayingSong?['artist'] == null ||
-                                _currentlyPlayingSong?['artist'] == "<unknown>")
-                                ? "Unknown Artist"
-                                : _currentlyPlayingSong!['artist'],
+                            song: _currentlyPlayingSong!, // ✅ Pass Song object
                             isPlaying: _isPlaying,
                             onPlayPause: _togglePlayPause,
                           ),
