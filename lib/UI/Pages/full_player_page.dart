@@ -125,58 +125,70 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = const Color(0xFFD8512B);
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    // Responsive scaling factors
+    double w(double value) => value * screenWidth / 400; // base width 400
+    double h(double value) => value * screenHeight / 800; // base height 800
+    double fs(double value) => value * screenWidth / 400;
+
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+          icon: Icon(Icons.keyboard_arrow_down_rounded, size: w(32)),
           color: isDark ? Colors.white70 : Colors.black87,
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
-        title: const Text("Now Playing", style: TextStyle(fontWeight: FontWeight.w600)),
+        title: Text("Now Playing",
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: fs(18))),
         actions: [
           IconButton(
-            icon: const Icon(Icons.volume_up_rounded),
+            icon: Icon(Icons.volume_up_rounded, size: w(28)),
             color: isDark ? Colors.white70 : Colors.black87,
             onPressed: () => VolumeControllerService.openSystemVolumePanel(),
           ),
           IconButton(
-            icon: const Icon(Icons.more_vert_rounded),
+            icon: Icon(Icons.more_vert_rounded, size: w(28)),
             color: isDark ? Colors.white70 : Colors.black87,
             onPressed: () {},
           ),
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        padding: EdgeInsets.symmetric(horizontal: w(20), vertical: h(15)),
         child: Column(
           children: [
-            const SizedBox(height: 20),
+            SizedBox(height: h(20)),
             ClipRRect(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(w(20)),
               child: Container(
-                height: MediaQuery.of(context).size.width * 0.75,
-                width: MediaQuery.of(context).size.width * 0.75,
+                height: screenWidth * 0.75,
+                width: screenWidth * 0.75,
                 color: Colors.black12,
-                child: const Icon(Icons.music_note, size: 100, color: Colors.grey),
+                child: Icon(Icons.music_note, size: w(100), color: Colors.grey),
               ),
             ),
-            const SizedBox(height: 25),
+            SizedBox(height: h(25)),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              padding: EdgeInsets.symmetric(horizontal: w(20)),
               child: SizedBox(
-                height: 30,
+                height: h(30),
                 child: currentSong != null && currentSong!.title.length > 25
                     ? Marquee(
                   text: currentSong!.title,
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
-                  blankSpace: 40.0,
+                  style: TextStyle(
+                      fontSize: fs(22),
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black),
+                  blankSpace: w(40),
                   velocity: 35.0,
                   pauseAfterRound: const Duration(seconds: 1),
-                  startPadding: 10.0,
+                  startPadding: w(10),
                   accelerationDuration: const Duration(seconds: 1),
                   decelerationDuration: const Duration(milliseconds: 500),
                 )
@@ -185,57 +197,101 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black),
+                  style: TextStyle(
+                      fontSize: fs(22),
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black),
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: h(6)),
             Text(
-              currentSong == null || currentSong!.artist.isEmpty || currentSong!.artist == "<unknown>" ? "Unknown Artist" : currentSong!.artist,
-              style: TextStyle(fontSize: 15, color: isDark ? Colors.white70 : Colors.black54),
+              currentSong == null ||
+                  currentSong!.artist.isEmpty ||
+                  currentSong!.artist == "<unknown>"
+                  ? "Unknown Artist"
+                  : currentSong!.artist,
+              style:
+              TextStyle(fontSize: fs(15), color: isDark ? Colors.white70 : Colors.black54),
             ),
-            const SizedBox(height: 65),
+            SizedBox(height: h(65)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                IconButton(icon: const Icon(Icons.queue_music), color: Colors.grey, onPressed: () {}),
-                IconButton(icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border), color: isFavorite ? const Color(0xFF8C0D0D) : Colors.grey, onPressed: toggleFavorite),
-                IconButton(icon: const Icon(Icons.add_rounded), color: Colors.grey, onPressed: () {}),
+                IconButton(
+                    icon: Icon(Icons.queue_music, size: w(28)),
+                    color: Colors.grey,
+                    onPressed: () {}),
+                IconButton(
+                    icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border,
+                        size: w(28)),
+                    color: isFavorite ? const Color(0xFF8C0D0D) : Colors.grey,
+                    onPressed: toggleFavorite),
+                IconButton(
+                    icon: Icon(Icons.add_rounded, size: w(28)),
+                    color: Colors.grey,
+                    onPressed: () {}),
               ],
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: h(20)),
             Slider(
-              value: currentPosition.inMilliseconds.toDouble().clamp(0.0, totalDuration.inMilliseconds.toDouble().clamp(0.0, 999999999.0)),
-              max: totalDuration.inMilliseconds.toDouble() == 0 ? 1 : totalDuration.inMilliseconds.toDouble(),
+              value: currentPosition.inMilliseconds
+                  .toDouble()
+                  .clamp(0.0, totalDuration.inMilliseconds.toDouble().clamp(0.0, 999999999.0)),
+              max: totalDuration.inMilliseconds.toDouble() == 0
+                  ? 1
+                  : totalDuration.inMilliseconds.toDouble(),
               activeColor: color,
               inactiveColor: Colors.grey.shade700,
-              onChanged: (value) => setState(() => currentPosition = Duration(milliseconds: value.toInt())),
-              onChangeEnd: (value) => _audioService.seek(Duration(milliseconds: value.toInt())),
+              onChanged: (value) => setState(
+                      () => currentPosition = Duration(milliseconds: value.toInt())),
+              onChangeEnd: (value) =>
+                  _audioService.seek(Duration(milliseconds: value.toInt())),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 25.0),
+              padding: EdgeInsets.symmetric(horizontal: w(25)),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(formatTime(currentPosition), style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 13)),
-                  Text(formatTime(totalDuration), style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 13)),
+                  Text(formatTime(currentPosition),
+                      style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: fs(13))),
+                  Text(formatTime(totalDuration),
+                      style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: fs(13))),
                 ],
               ),
             ),
-            const SizedBox(height: 30),
+            SizedBox(height: h(30)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                IconButton(icon: Icon(Icons.shuffle_rounded, color: isShuffle ? color : Colors.grey), iconSize: 28, onPressed: toggleShuffle),
-                IconButton(icon: const Icon(Icons.skip_previous_rounded), iconSize: 36, color: color, onPressed: handlePrevious),
-                IconButton(icon: Icon(isPlayingLocal ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded), iconSize: 70, color: color, onPressed: handlePlayPause),
-                IconButton(icon: const Icon(Icons.skip_next_rounded), iconSize: 36, color: color, onPressed: handleNext),
+                IconButton(
+                    icon: Icon(Icons.shuffle_rounded, color: isShuffle ? color : Colors.grey),
+                    iconSize: w(28),
+                    onPressed: toggleShuffle),
+                IconButton(
+                    icon: Icon(Icons.skip_previous_rounded),
+                    iconSize: w(36),
+                    color: color,
+                    onPressed: handlePrevious),
+                IconButton(
+                    icon: Icon(
+                        isPlayingLocal
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_fill_rounded),
+                    iconSize: w(70),
+                    color: color,
+                    onPressed: handlePlayPause),
+                IconButton(
+                    icon: Icon(Icons.skip_next_rounded),
+                    iconSize: w(36),
+                    color: color,
+                    onPressed: handleNext),
                 IconButton(
                   icon: Icon(
                     repeatMode == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
                     color: repeatMode == 0 ? Colors.grey : color,
                   ),
-                  iconSize: 28,
+                  iconSize: w(28),
                   onPressed: toggleRepeat,
                 ),
               ],
