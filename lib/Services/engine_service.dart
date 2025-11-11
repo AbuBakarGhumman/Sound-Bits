@@ -193,22 +193,18 @@ class EngineService {
   Future<void> _skip(int offset) async {
     if (_currentQueue.isEmpty) return;
 
-    int newIndex = _currentIndex;
+    int newIndex = _currentIndex + offset;
 
-    if (_repeatMode == 2) { // Repeat one
-      // Keep the same index
+    // Handle Repeat All wrap-around
+    if (_repeatMode == 1) {
+      newIndex = (newIndex + _currentQueue.length) % _currentQueue.length;
     } else {
-      newIndex += offset;
-
-      if (_repeatMode == 1) { // Repeat all
-        newIndex = (newIndex + _currentQueue.length) % _currentQueue.length;
-      } else { // No repeat
-        if (newIndex >= _currentQueue.length || newIndex < 0) {
-          await _audioService.pause();
-          _currentIndex = -1;
-          _nowPlayingController.add(null);
-          return;
-        }
+      // No repeat: stop if out of bounds
+      if (newIndex < 0 || newIndex >= _currentQueue.length) {
+        await _audioService.pause();
+        _currentIndex = -1;
+        _nowPlayingController.add(null);
+        return;
       }
     }
 
@@ -217,6 +213,7 @@ class EngineService {
     _nowPlayingController.add(songToPlay);
     await _audioService.play(songToPlay);
   }
+
 
 
   Future<void> saveCurrentSession() async {

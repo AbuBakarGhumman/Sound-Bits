@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -15,24 +18,45 @@ class MusicService {
 
   // 🔥 Request storage/audio permissions (for Android 13+ too)
   Future<bool> _checkAndRequestPermission() async {
-    if (await Permission.audio.isGranted ||
-        await Permission.storage.isGranted) {
-      return true;
+    if (!Platform.isAndroid) return true;
+
+    final sdkInt = await _getSdkInt() ?? 0;
+
+    PermissionStatus audioStatus = PermissionStatus.granted;
+    PermissionStatus storageStatus = PermissionStatus.granted;
+
+    if (sdkInt >= 33) {
+      // ✅ Android 13+ → request READ_MEDIA_AUDIO
+      audioStatus = await Permission.audio.status;
+      if (!audioStatus.isGranted) {
+        audioStatus = await Permission.audio.request();
+      }
+    } else {
+      // ✅ Android 12 and below → request classic storage permissions
+      storageStatus = await Permission.storage.status;
+      if (!storageStatus.isGranted) {
+        storageStatus = await Permission.storage.request();
+      }
     }
 
-    final status = await [
-      Permission.audio,
-      Permission.storage,
-      Permission.mediaLibrary,
-    ].request();
+    final granted = (sdkInt >= 33 ? audioStatus.isGranted : storageStatus.isGranted);
 
-    bool granted = status.values.any((s) => s.isGranted);
     if (!granted) {
       print("❌ Permission not granted to access audio files.");
+    } else {
+      print("✅ Permissions OK for fetching songs.");
     }
+
     return granted;
   }
 
+
+// Helper: Safely obtain Android SDK version
+  Future<int> _getSdkInt() async {
+    final deviceInfo = DeviceInfoPlugin();
+    final androidInfo = await deviceInfo.androidInfo;
+    return androidInfo.version.sdkInt;
+  }
   // ✅ Fetch all songs safely (returns List<Song>)
   Future<List<Song>> fetchSongs() async {
     if (_isFetching) {

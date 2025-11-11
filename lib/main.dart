@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Required for SystemNavigator.pop
 import 'package:permission_handler/permission_handler.dart';
@@ -14,6 +15,7 @@ import 'UI/Pages/mHome.dart';
 import 'UI/Pages/mLibrary.dart';
 import 'UI/Pages/mPlaylists.dart';
 import 'UI/Pages/mDrive.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -95,35 +97,65 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
   }
 
   Future<void> _checkPermissionsAndRestore() async {
-    var statusManage = await Permission.manageExternalStorage.status;
-    var statusStorage = await Permission.storage.status;
+    PermissionStatus statusManage = PermissionStatus.denied;
+    PermissionStatus statusStorage = PermissionStatus.denied;
+    PermissionStatus statusAudio = PermissionStatus.denied;
 
-    if (!statusManage.isGranted) {
-      statusManage = await Permission.manageExternalStorage.request();
-    }
-    if (!statusStorage.isGranted) {
-      statusStorage = await Permission.storage.request();
-    }
+    if (Platform.isAndroid) {
+      final sdkInt = await _getSdkInt() ?? 0;
+      print("Android version is " + sdkInt.toString());
+      for (int i = 0; i < 5; i++) {
+        print("");
+      }
+      // ✅ Always request MANAGE_EXTERNAL_STORAGE for all versions
+      statusManage = await Permission.manageExternalStorage.status;
+      if (!statusManage.isGranted) {
+        statusManage = await Permission.manageExternalStorage.request();
+      }
 
-    bool allGranted = statusManage.isGranted && statusStorage.isGranted;
-
-    if (mounted) {
-      setState(() {
-        _permissionStatus = allGranted
-            ? PermissionStatusState.granted
-            : PermissionStatusState.denied;
-      });
-
-      if (_permissionStatus == PermissionStatusState.granted) {
-        await _engine.restoreLastSession();
-        if (mounted) {
-          setState(() {
-            _currentlyPlayingSong = _engine.currentSong;
-            _isPlaying = _engine.isPlaying;
-          });
+      if (sdkInt >= 33) {
+        // ✅ Android 13+ → use READ_MEDIA_AUDIO
+        statusAudio = await Permission.audio.status;
+        if (!statusAudio.isGranted) {
+          statusAudio = await Permission.audio.request();
+        }
+      } else {
+        // ✅ Android 12 and below → use READ/WRITE_EXTERNAL_STORAGE
+        statusStorage = await Permission.storage.status;
+        if (!statusStorage.isGranted) {
+          statusStorage = await Permission.storage.request();
         }
       }
     }
+
+    // ✅ Combine all permission states
+    final allGranted = statusManage.isGranted &&
+        (statusAudio.isGranted || statusStorage.isGranted);
+
+    if (!mounted) return;
+
+    setState(() {
+      _permissionStatus = allGranted
+          ? PermissionStatusState.granted
+          : PermissionStatusState.denied;
+    });
+
+    if (_permissionStatus == PermissionStatusState.granted) {
+      await _engine.restoreLastSession();
+      if (mounted) {
+        setState(() {
+          _currentlyPlayingSong = _engine.currentSong;
+          _isPlaying = _engine.isPlaying;
+        });
+      }
+    }
+  }
+
+// ✅ Helper: Get Android SDK version safely
+  Future<int> _getSdkInt() async {
+    final deviceInfo = DeviceInfoPlugin();
+    final androidInfo = await deviceInfo.androidInfo;
+    return androidInfo.version.sdkInt;
   }
 
   @override
