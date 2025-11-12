@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import '../../Constants/app_constants.dart';
-import '../../Models/song_object.dart'; // ✅ Import your Song class
+import '../../Models/song_object.dart';
 import '../../Services/music_service.dart';
 import '../Components/album_item.dart';
 import '../Components/folder_item.dart';
 import '../Components/track_item.dart';
 import '../Components/splash_title.dart';
-// import '../../Services/engine_service.dart'; // ❌ No direct engine import here
 
 class MLibraryPage extends StatefulWidget {
-  final Song? currentlyPlayingSong; // ✅ Use Song instead of Map
+  final Song? currentlyPlayingSong;
   final bool isPlaying;
   final VoidCallback onGoHome;
-  final Function(Song song, List<Song> allSongs, String folderName, int index) onPlaySong;
+  final Function(Song song, List<Song> allSongs, String folderName, int index)
+  onPlaySong;
 
   const MLibraryPage({
     super.key,
@@ -34,8 +34,10 @@ class _MLibraryPageState extends State<MLibraryPage> {
 
   final MusicService _musicService = MusicService();
 
-  late Future<Map<String, List<Song>>> _foldersFuture; // ✅ Updated type
-  late Future<List<Song>> _tracksFuture; // ✅ Updated type
+  late Future<Map<String, List<Song>>> _foldersFuture;
+  late Future<List<Song>> _tracksFuture;
+  late Future<Map<String, List<Song>>> _albumsFuture;
+
   bool _futuresInitialized = false;
 
   final List<String> tabs = [
@@ -67,6 +69,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
     if (!_futuresInitialized) {
       _foldersFuture = _musicService.fetchFolders();
       _tracksFuture = _musicService.fetchSongs();
+      _albumsFuture = _musicService.fetchAlbums();
       _futuresInitialized = true;
     }
   }
@@ -186,19 +189,68 @@ class _MLibraryPageState extends State<MLibraryPage> {
 
                 return TrackItem(
                   songTitle: song.title,
-                  artistName: song.artist,
+                  artistName:
+                  (song.artist == "<unknown>" || song.artist.trim().isEmpty)
+                      ? "Unknown"
+                      : song.artist,
                   isDark: isDark,
                   isSelected: isSelected,
                   isPlaying: isSelected && widget.isPlaying,
                   onTap: () {
-                    widget.onPlaySong(
-                      song,
-                      songs,
-                      'All Tracks',
-                      index,
-                    );
+                    widget.onPlaySong(song, songs, 'All Tracks', index);
                   },
                   onMoreTap: () {},
+                );
+              },
+            );
+          },
+        );
+
+      case 'Albums':
+        return FutureBuilder<Map<String, List<Song>>>(
+          future: _albumsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const Center(child: Text("No albums found."));
+            }
+
+            final albums = snapshot.data!;
+            final albumNames = albums.keys.toList();
+
+            return GridView.builder(
+              key: const ValueKey('albums_grid'),
+              padding: const EdgeInsets.all(12.0),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 6,
+                childAspectRatio: 0.67,
+              ),
+              itemCount: albumNames.length,
+              itemBuilder: (context, index) {
+                final albumName = albumNames[index];
+                final songsInAlbum = albums[albumName]!;
+                final firstSong = songsInAlbum.first;
+
+                return AlbumItem(
+                  albumTitle: albumName,
+                  artistName: (firstSong.artist == "<unknown>" ||
+                      firstSong.artist.trim().isEmpty)
+                      ? "Unknown"
+                      : firstSong.artist,
+                  coverUrl: null,
+                  isDark: isDark,
+                  onTap: () {
+                    widget.onPlaySong(
+                      songsInAlbum.first,
+                      songsInAlbum,
+                      albumName,
+                      0,
+                    );
+                  },
                 );
               },
             );
@@ -260,7 +312,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
 
     return WillPopScope(
       onWillPop: () async {
-        widget.onGoHome(); // Navigate to Home tab instead of popping
+        widget.onGoHome();
         return false;
       },
       child: SafeArea(
@@ -331,9 +383,8 @@ class _MLibraryPageState extends State<MLibraryPage> {
                           duration: const Duration(milliseconds: 200),
                           style: TextStyle(
                             fontSize: isSelected ? 22 : 16,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                            fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
                             color: isSelected
                                 ? (isDark ? Colors.white : Colors.black)
                                 : (isDark
@@ -374,7 +425,9 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   child: Container(
                     key: ValueKey<int>(selectedIndex),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
+                      color: isDark
+                          ? const Color(0xFF1C1C1E)
+                          : Colors.grey[100],
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(24.0),
                         topRight: Radius.circular(24.0),

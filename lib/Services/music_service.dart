@@ -50,13 +50,13 @@ class MusicService {
     return granted;
   }
 
-
-// Helper: Safely obtain Android SDK version
+  // Helper: Safely obtain Android SDK version
   Future<int> _getSdkInt() async {
     final deviceInfo = DeviceInfoPlugin();
     final androidInfo = await deviceInfo.androidInfo;
     return androidInfo.version.sdkInt;
   }
+
   // ✅ Fetch all songs safely (returns List<Song>)
   Future<List<Song>> fetchSongs() async {
     if (_isFetching) {
@@ -125,6 +125,26 @@ class MusicService {
 
     print("📂 Processed songs into ${folders.length} folders.");
     return folders;
+  }
+
+  // ✅ Fetch songs grouped by album (returns Map<String, List<Song>>)
+  Future<Map<String, List<Song>>> fetchAlbums() async {
+    final allSongs = await fetchSongs();
+    if (allSongs.isEmpty) {
+      print("⚠️ No songs found, so no albums will be returned.");
+      return {};
+    }
+
+    final Map<String, List<Song>> albums = {};
+    for (var song in allSongs) {
+      final albumName = (song.album != null && song.album!.trim().isNotEmpty)
+          ? song.album!
+          : "Unknown Album";
+      albums.putIfAbsent(albumName, () => []).add(song);
+    }
+
+    print("💿 Processed songs into ${albums.length} albums.");
+    return albums;
   }
 
   void exitApp() {

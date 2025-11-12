@@ -37,7 +37,7 @@ class AlbumItem extends StatelessWidget {
                 color: isDark ? Colors.grey[600] : Colors.white,
                 child: Icon(
                   Icons.album_rounded,
-                  size: 48.0,
+                  size: 88.0,
                   color: isDark ? Colors.white54 : Colors.black45,
                 ),
               ),
