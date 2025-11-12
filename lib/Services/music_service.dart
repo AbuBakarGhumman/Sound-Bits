@@ -40,13 +40,6 @@ class MusicService {
     }
 
     final granted = (sdkInt >= 33 ? audioStatus.isGranted : storageStatus.isGranted);
-
-    if (!granted) {
-      print("❌ Permission not granted to access audio files.");
-    } else {
-      print("✅ Permissions OK for fetching songs.");
-    }
-
     return granted;
   }
 
@@ -60,13 +53,11 @@ class MusicService {
   // ✅ Fetch all songs safely (returns List<Song>)
   Future<List<Song>> fetchSongs() async {
     if (_isFetching) {
-      print("⚠️ A song fetch is already in progress. Aborting.");
       return [];
     }
 
     bool hasPermission = await _checkAndRequestPermission();
     if (!hasPermission) {
-      print("❌ Cannot fetch songs: permission denied.");
       return [];
     }
 
@@ -81,7 +72,6 @@ class MusicService {
 
       print("✅ Found ${songModels.length} songs on the device.");
       if (songModels.isEmpty) {
-        print("⚠️ No songs returned by OnAudioQuery. Check file formats or permissions.");
       }
 
       // 🔄 Convert SongModel → Song object
@@ -94,11 +84,6 @@ class MusicService {
           thumbnail: null, // artwork can be queried separately when needed
         );
       }).toList();
-
-      // Optional: print first few songs for debug
-      for (var song in songs.take(5)) {
-        print("🎵 ${song.title} - ${song.uri}");
-      }
 
       return songs;
     } catch (e) {

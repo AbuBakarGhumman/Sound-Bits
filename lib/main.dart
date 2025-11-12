@@ -103,10 +103,7 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
 
     if (Platform.isAndroid) {
       final sdkInt = await _getSdkInt() ?? 0;
-      print("Android version is " + sdkInt.toString());
-      for (int i = 0; i < 5; i++) {
-        print("");
-      }
+
       // ✅ Always request MANAGE_EXTERNAL_STORAGE for all versions
       statusManage = await Permission.manageExternalStorage.status;
       if (!statusManage.isGranted) {
