@@ -5,9 +5,10 @@ import 'package:flutter/services.dart'; // For SystemNavigator.pop
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-
+import 'package:just_audio_background/just_audio_background.dart';
 import 'Constants/app_constants.dart';
 import 'Models/song_object.dart';
+import 'Services/audio_player_service.dart';
 import 'Services/volume_controller_service.dart';
 import 'Services/engine_service.dart';
 import 'UI/Components/now_playing_bar.dart';
@@ -22,6 +23,14 @@ import 'UI/Pages/mTracklist.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   VolumeControllerService.init();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.example.music.channel.audio',
+    androidNotificationChannelName: 'Music Playback',
+    androidNotificationOngoing: true,
+    androidShowNotificationBadge: true,
+    notificationColor: const Color(0xFF1DB954), // Spotify green-style color
+  );
+  await AudioPlayerService().init();
   runApp(const MyApp());
 }
 
