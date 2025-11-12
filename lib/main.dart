@@ -28,7 +28,7 @@ Future<void> main() async {
     androidNotificationChannelName: 'Music Playback',
     androidNotificationOngoing: true,
     androidShowNotificationBadge: true,
-    notificationColor: const Color(0xFF1DB954), // Spotify green-style color
+    androidNotificationIcon: 'drawable/logo1',
   );
   await AudioPlayerService().init();
   runApp(const MyApp());
@@ -201,9 +201,9 @@ class _MMainNavBarState extends State<MMainNavBar>
   void _skipPrevious() => _engine.skipPrevious();
 
   Future<void> _handleAppExit() async {
-    await _engine.pause();
-    await _engine.saveCurrentSession();
-    await _engine.dispose();
+    //await _engine.pause();
+    //await _engine.saveCurrentSession();
+    //await _engine.dispose();
     SystemNavigator.pop();
   }
 

@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'package:just_audio/just_audio.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Keep if needed for other engine specific prefs
+import 'package:shared_preferences/shared_preferences.dart';
 import '../Models/song_object.dart';
 import 'audio_player_service.dart';
 
 class EngineService {
-  // Singleton
   static final EngineService _instance = EngineService._internal();
   factory EngineService() => _instance;
   EngineService._internal() {
     _listenToPlayerState();
+    _listenToSongChange();
   }
 
   final AudioPlayerService _audioService = AudioPlayerService();
@@ -17,26 +17,35 @@ class EngineService {
   List<Song> _currentQueue = [];
   int _currentIndex = -1;
   String? _currentFolder;
+  Song? _currentSong; // ✅ added missing field
 
-  int _repeatMode = 0; // 0 = no repeat, 1 = repeat all, 2 = repeat one
+  int _repeatMode = 0;
 
-  // Streams for UI
   final _nowPlayingController = StreamController<Song?>.broadcast();
   Stream<Song?> get nowPlayingStream => _nowPlayingController.stream;
 
   final _playerStateController = StreamController<PlayerState>.broadcast();
   Stream<PlayerState> get playerStateStream => _playerStateController.stream;
 
-  // ===== Getters =====
-  Song? get currentSong => _currentIndex >= 0 && _currentIndex < _currentQueue.length
-      ? _currentQueue[_currentIndex]
-      : null;
+  Song? get currentSong =>
+      _currentIndex >= 0 && _currentIndex < _currentQueue.length
+          ? _currentQueue[_currentIndex]
+          : null;
 
   bool get isPlaying => _audioService.isPlaying;
-
   List<Song> get currentQueue => List.unmodifiable(_currentQueue);
-
   int get repeatMode => _repeatMode;
+
+  // ===== Song change listener from AudioPlayerService =====
+  void _listenToSongChange() {
+    _audioService.currentSongStream.listen((song) {
+      if (song != null) {
+        _currentSong = song;
+        _currentIndex = _currentQueue.indexWhere((s) => s.uri == song.uri);
+        _nowPlayingController.add(song);
+      }
+    });
+  }
 
   // ===== Play from folder =====
   Future<void> playFromFolder({
@@ -48,6 +57,7 @@ class EngineService {
     _currentQueue = songs;
     _currentIndex = index;
     _currentFolder = folderName;
+    _currentSong = _currentQueue[_currentIndex];
 
     if (_currentIndex < 0 || _currentIndex >= _currentQueue.length) {
       _nowPlayingController.add(null);
@@ -58,7 +68,7 @@ class EngineService {
     _nowPlayingController.add(songToPlay);
 
     if (!isResuming) {
-      await _audioService.play(songToPlay);
+      await _audioService.playQueue(_currentQueue, startIndex: _currentIndex);
     } else {
       await _audioService.restoreSong(
         songToPlay,
@@ -84,6 +94,7 @@ class EngineService {
     _currentQueue = restoredQueue;
     _currentIndex = restoredQueue.indexWhere((s) => s.uri == restoredSong.uri);
     _currentFolder = restoredFolder;
+    _currentSong = restoredSong;
 
     if (_currentIndex < 0) {
       _currentIndex = 0;
@@ -103,24 +114,21 @@ class EngineService {
           _playerStateController.add(state);
 
           if (state.processingState == ProcessingState.completed) {
-            print("Song completed. Repeat mode: $_repeatMode, Index: $_currentIndex");
+            print(
+                "Song completed. Repeat mode: $_repeatMode, Index: $_currentIndex");
 
-            // Handle according to repeat mode
             if (_repeatMode == 2) {
-              // Repeat one
-               _audioService.seek(Duration.zero);
+              _audioService.seek(Duration.zero);
               await _audioService.play(currentSong!);
             } else if (_repeatMode == 1) {
-              // Repeat all
               int nextIndex = _currentIndex + 1;
               if (nextIndex >= _currentQueue.length) nextIndex = 0;
-
               _currentIndex = nextIndex;
               final songToPlay = _currentQueue[_currentIndex];
               _nowPlayingController.add(songToPlay);
-              await _audioService.play(songToPlay);
+              await _audioService.playQueue(_currentQueue,
+                  startIndex: _currentIndex);
             } else {
-              // No repeat
               final bool isLast = _currentIndex == _currentQueue.length - 1;
               if (isLast) {
                 await _audioService.pause();
@@ -129,18 +137,19 @@ class EngineService {
                 _currentIndex++;
                 final songToPlay = _currentQueue[_currentIndex];
                 _nowPlayingController.add(songToPlay);
-                await _audioService.play(songToPlay);
+                await _audioService.playQueue(_currentQueue,
+                    startIndex: _currentIndex);
               }
             }
           }
         }
       },
-      onError: (error) => print("EngineService: Error in playerStateStream -> $error"),
+      onError: (error) =>
+          print("EngineService: Error in playerStateStream -> $error"),
       onDone: () => print("EngineService: playerStateStream done."),
       cancelOnError: true,
     );
   }
-
 
   // ===== Controls =====
   Future<void> togglePlayPause() async {
@@ -195,11 +204,9 @@ class EngineService {
 
     int newIndex = _currentIndex + offset;
 
-    // Handle Repeat All wrap-around
     if (_repeatMode == 1) {
       newIndex = (newIndex + _currentQueue.length) % _currentQueue.length;
     } else {
-      // No repeat: stop if out of bounds
       if (newIndex < 0 || newIndex >= _currentQueue.length) {
         await _audioService.pause();
         _currentIndex = -1;
@@ -209,12 +216,11 @@ class EngineService {
     }
 
     _currentIndex = newIndex;
+    _currentSong = _currentQueue[_currentIndex];
     final songToPlay = _currentQueue[_currentIndex];
     _nowPlayingController.add(songToPlay);
-    await _audioService.play(songToPlay);
+    await _audioService.playQueue(_currentQueue, startIndex: _currentIndex);
   }
-
-
 
   Future<void> saveCurrentSession() async {
     print("EngineService: Saving current session...");
