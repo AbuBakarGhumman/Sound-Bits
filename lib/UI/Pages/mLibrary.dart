@@ -15,12 +15,16 @@ class MLibraryPage extends StatefulWidget {
   final Function(Song song, List<Song> allSongs, String folderName, int index)
   onPlaySong;
 
+  /// ✅ New callback for opening TrackList inside main navigation stack
+  final Function(String title, List<Song> songs) onOpenTrackList;
+
   const MLibraryPage({
     super.key,
     required this.currentlyPlayingSong,
     required this.isPlaying,
     required this.onGoHome,
     required this.onPlaySong,
+    required this.onOpenTrackList,
   });
 
   @override
@@ -199,7 +203,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   onTap: () {
                     widget.onPlaySong(song, songs, 'All Tracks', index);
                   },
-                  onMoreTap: () {},
+                  onMoreTap: () {print("More tapped");},
                 );
               },
             );
@@ -244,12 +248,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   coverUrl: null,
                   isDark: isDark,
                   onTap: () {
-                    widget.onPlaySong(
-                      songsInAlbum.first,
-                      songsInAlbum,
-                      albumName,
-                      0,
-                    );
+                    widget.onOpenTrackList(albumName, songsInAlbum);
                   },
                 );
               },
@@ -285,12 +284,8 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   isDark: isDark,
                   onTap: () {
                     if (songsInFolder.isNotEmpty) {
-                      widget.onPlaySong(
-                        songsInFolder.first,
-                        songsInFolder,
-                        p.basename(folderPath),
-                        0,
-                      );
+                      widget.onOpenTrackList(
+                          p.basename(folderPath), songsInFolder);
                     }
                   },
                 );
@@ -383,8 +378,9 @@ class _MLibraryPageState extends State<MLibraryPage> {
                           duration: const Duration(milliseconds: 200),
                           style: TextStyle(
                             fontSize: isSelected ? 22 : 16,
-                            fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                             color: isSelected
                                 ? (isDark ? Colors.white : Colors.black)
                                 : (isDark
@@ -425,9 +421,8 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   child: Container(
                     key: ValueKey<int>(selectedIndex),
                     decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF1C1C1E)
-                          : Colors.grey[100],
+                      color:
+                      isDark ? const Color(0xFF1C1C1E) : Colors.grey[100],
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(24.0),
                         topRight: Radius.circular(24.0),

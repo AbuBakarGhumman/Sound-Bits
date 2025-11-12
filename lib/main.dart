@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Required for SystemNavigator.pop
+import 'package:flutter/services.dart'; // For SystemNavigator.pop
 import 'package:permission_handler/permission_handler.dart';
-import 'package:just_audio/just_audio.dart'; // Keep for PlayerState
+import 'package:just_audio/just_audio.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+
 import 'Constants/app_constants.dart';
 import 'Models/song_object.dart';
 import 'Services/volume_controller_service.dart';
@@ -15,7 +17,7 @@ import 'UI/Pages/mHome.dart';
 import 'UI/Pages/mLibrary.dart';
 import 'UI/Pages/mPlaylists.dart';
 import 'UI/Pages/mDrive.dart';
-import 'package:device_info_plus/device_info_plus.dart';
+import 'UI/Pages/mTracklist.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,7 +59,8 @@ class MMainNavBar extends StatefulWidget {
   State<MMainNavBar> createState() => _MMainNavBarState();
 }
 
-class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
+class _MMainNavBarState extends State<MMainNavBar>
+    with WidgetsBindingObserver {
   PermissionStatusState _permissionStatus = PermissionStatusState.checking;
 
   final EngineService _engine = EngineService();
@@ -68,6 +71,10 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
   Song? _currentlyPlayingSong;
   bool _isPlaying = false;
   final bool _showNowPlayingBar = true;
+
+  // ✅ For TracksListPage management
+  String? _currentTrackListTitle;
+  List<Song> _currentTrackListSongs = [];
 
   @override
   void initState() {
@@ -82,7 +89,6 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _engine.saveCurrentSession(); // Save session on background
-      // Dispose engine and stop player cleanly
     }
     super.didChangeAppLifecycleState(state);
   }
@@ -104,20 +110,17 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     if (Platform.isAndroid) {
       final sdkInt = await _getSdkInt() ?? 0;
 
-      // ✅ Always request MANAGE_EXTERNAL_STORAGE for all versions
       statusManage = await Permission.manageExternalStorage.status;
       if (!statusManage.isGranted) {
         statusManage = await Permission.manageExternalStorage.request();
       }
 
       if (sdkInt >= 33) {
-        // ✅ Android 13+ → use READ_MEDIA_AUDIO
         statusAudio = await Permission.audio.status;
         if (!statusAudio.isGranted) {
           statusAudio = await Permission.audio.request();
         }
       } else {
-        // ✅ Android 12 and below → use READ/WRITE_EXTERNAL_STORAGE
         statusStorage = await Permission.storage.status;
         if (!statusStorage.isGranted) {
           statusStorage = await Permission.storage.request();
@@ -125,7 +128,6 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
       }
     }
 
-    // ✅ Combine all permission states
     final allGranted = statusManage.isGranted &&
         (statusAudio.isGranted || statusStorage.isGranted);
 
@@ -148,7 +150,6 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     }
   }
 
-// ✅ Helper: Get Android SDK version safely
   Future<int> _getSdkInt() async {
     final deviceInfo = DeviceInfoPlugin();
     final androidInfo = await deviceInfo.androidInfo;
@@ -160,11 +161,16 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _nowPlayingSubscription?.cancel();
     _playerStateSubscription?.cancel();
-    _engine.dispose(); // Cleanly stop player and release resources
+    _engine.dispose();
     super.dispose();
   }
 
-  void _onItemTapped(int index) => setState(() => _selectedIndex = index);
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _currentTrackListTitle = null; // Reset TrackList when navigating tabs
+    });
+  }
 
   void _onPlaySong(
       Song song, List<Song> allSongs, String folderName, int index) async {
@@ -172,16 +178,24 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
         songs: allSongs, index: index, folderName: folderName);
   }
 
+  // ✅ Opens TrackList inside IndexedStack
+  void _onOpenTrackList(String title, List<Song> songs) {
+    setState(() {
+      _currentTrackListTitle = title;
+      _currentTrackListSongs = songs;
+      _selectedIndex = 4;
+    });
+  }
+
   void _togglePlayPause() => _engine.togglePlayPause();
   void _skipNext() => _engine.skipNext();
   void _skipPrevious() => _engine.skipPrevious();
 
   Future<void> _handleAppExit() async {
-    print("App exit requested! Stopping player, saving session, and closing app...");
-    await _engine.pause(); // Pause playback
-    await _engine.saveCurrentSession(); // Save queue and info
-    await _engine.dispose(); // Stop and clean audio resources
-    SystemNavigator.pop(); // Exit the app cleanly
+    await _engine.pause();
+    await _engine.saveCurrentSession();
+    await _engine.dispose();
+    SystemNavigator.pop();
   }
 
   @override
@@ -192,7 +206,8 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
       case PermissionStatusState.checking:
         return Scaffold(
           backgroundColor: isDark ? Colors.black : Colors.white,
-          body: const Center(child: CircularProgressIndicator(color: Color(0xFFD8512B),)),
+          body: const Center(
+              child: CircularProgressIndicator(color: Color(0xFFD8512B))),
         );
 
       case PermissionStatusState.denied:
@@ -235,7 +250,11 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
         return WillPopScope(
           onWillPop: () async {
             if (_selectedIndex == 0) {
-              await _handleAppExit(); // Clean exit
+              await _handleAppExit();
+              return false;
+            }
+            if (_selectedIndex == 4) {
+              setState(() => _selectedIndex = 2); // Back to Library
               return false;
             }
             return true;
@@ -255,8 +274,21 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
                       isPlaying: _isPlaying,
                       onPlaySong: _onPlaySong,
                       onGoHome: () => setState(() => _selectedIndex = 0),
+                      onOpenTrackList: _onOpenTrackList, // ✅ pass callback
                     ),
                     const MDrivePage(),
+                    if (_currentTrackListTitle != null)
+                      TracksListPage(
+                        name:"Library",
+                        title: _currentTrackListTitle!,
+                        tracks: _currentTrackListSongs,
+                        currentlyPlayingSong: _currentlyPlayingSong,
+                        isPlaying: _isPlaying,
+                        onPlaySong: _onPlaySong,
+                        onGoBack: () => setState(() => _selectedIndex = 2),
+                      )
+                    else
+                      const SizedBox.shrink(),
                   ],
                 ),
                 if (_showNowPlayingBar)
@@ -295,19 +327,23 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
               backgroundColor: isDark ? Colors.black : Colors.white,
               elevation: 0,
               selectedItemColor: const Color(0xFFD8512B),
-              unselectedItemColor: isDark ? Colors.white70 : Colors.black87,
-              currentIndex: _selectedIndex,
+              unselectedItemColor:
+              isDark ? Colors.white70 : Colors.black87,
+              currentIndex: _selectedIndex > 3 ? 2 : _selectedIndex,
               onTap: _onItemTapped,
               showUnselectedLabels: true,
-              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+              selectedLabelStyle:
+              const TextStyle(fontWeight: FontWeight.w500),
+              unselectedLabelStyle:
+              const TextStyle(fontWeight: FontWeight.w500),
               items: const [
                 BottomNavigationBarItem(
                     icon: Icon(Icons.home_outlined), label: "Home"),
                 BottomNavigationBarItem(
                     icon: Icon(Icons.queue_music), label: "Playlists"),
                 BottomNavigationBarItem(
-                    icon: Icon(Icons.library_music_outlined), label: "Library"),
+                    icon: Icon(Icons.library_music_outlined),
+                    label: "Library"),
                 BottomNavigationBarItem(
                     icon: Icon(Icons.cloud_off), label: "Drive"),
               ],
@@ -316,5 +352,4 @@ class _MMainNavBarState extends State<MMainNavBar> with WidgetsBindingObserver {
         );
     }
   }
-
 }
