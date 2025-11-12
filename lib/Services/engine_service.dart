@@ -10,6 +10,7 @@ class EngineService {
   EngineService._internal() {
     _listenToPlayerState();
     _listenToSongChange();
+    _loadRepeatMode();
   }
 
   final AudioPlayerService _audioService = AudioPlayerService();
@@ -45,6 +46,13 @@ class EngineService {
         _nowPlayingController.add(song);
       }
     });
+  }
+
+  // ===== Load repeat mode from SharedPreferences =====
+  void _loadRepeatMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    _repeatMode = prefs.getInt('repeatMode') ?? 0;
+    await _audioService.setRepeatMode(_repeatMode); // optional: sync with audio service
   }
 
   // ===== Play from folder =====

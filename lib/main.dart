@@ -12,7 +12,7 @@ import 'Services/audio_player_service.dart';
 import 'Services/volume_controller_service.dart';
 import 'Services/engine_service.dart';
 import 'UI/Components/now_playing_bar.dart';
-import 'UI/Pages/full_player_page.dart';
+import 'UI/Pages/mFullPlayer.dart';
 import 'UI/Pages/splash.dart';
 import 'UI/Pages/mHome.dart';
 import 'UI/Pages/mLibrary.dart';

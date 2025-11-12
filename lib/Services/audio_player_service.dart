@@ -59,6 +59,7 @@ class AudioPlayerService {
     final mediaItem = MediaItem(
       id: song.uri,
       title: song.title,
+      artist: song.artist == "<unknown>" ? "Unknown Artist" : song.artist,
       album: song.album ?? "Unknown Album",
       artUri: song.thumbnail != null && song.thumbnail!.isNotEmpty
           ? Uri.parse(song.thumbnail!)
@@ -83,6 +84,7 @@ class AudioPlayerService {
           tag: MediaItem(
             id: s.uri,
             title: s.title,
+            artist: s.artist == "<unknown>" ? "UnKnown Artist": s.artist,
             album: s.album ?? "Unknown Album",
             artUri: s.thumbnail != null && s.thumbnail!.isNotEmpty
                 ? Uri.parse(s.thumbnail!)
@@ -126,30 +128,64 @@ class AudioPlayerService {
     print("🔁 Repeat mode (manual): $mode");
   }
 
-  // ===== RESTORE LAST SONG =====
+  // ===== RESTORE LAST SONG (Show notification even if paused) =====
   Future<void> restoreSong(Song song, {bool isPlaying = false}) async {
     _currentSong = song;
     if (_audioHandler == null) return;
 
+    // ✅ Build MediaItem
     final mediaItem = MediaItem(
       id: song.uri,
       title: song.title,
-      artist: song.artist ?? "Unknown Artist",
+      artist: song.artist == "<unknown>" ? "Unknown Artist": song.artist,
       album: song.album ?? "Unknown Album",
       artUri: song.thumbnail != null && song.thumbnail!.isNotEmpty
           ? Uri.parse(song.thumbnail!)
           : null,
     );
 
-    await (_audioHandler as _MyAudioHandler).updateMediaItem(mediaItem);
+    // ✅ Restore queue if available
+    if (_currentQueue.isNotEmpty) {
+      final playlist = ConcatenatingAudioSource(
+        children: _currentQueue.map((s) {
+          return AudioSource.uri(
+            Uri.parse(s.uri),
+            tag: MediaItem(
+              id: s.uri,
+              title: s.title,
+              artist: s.artist=="<unknown>"? "UnKnown Artist": s.artist,
+              album: s.album ?? "Unknown Album",
+              artUri: s.thumbnail != null && s.thumbnail!.isNotEmpty
+                  ? Uri.parse(s.thumbnail!)
+                  : null,
+            ),
+          );
+        }).toList(),
+      );
 
+      final currentIndex =
+      _currentQueue.indexWhere((s) => s.uri == song.uri);
+      await _player.setAudioSource(
+        playlist,
+        initialIndex: currentIndex >= 0 ? currentIndex : 0,
+      );
+    } else {
+      await (_audioHandler as _MyAudioHandler).updateMediaItem(mediaItem);
+    }
+
+    // ✅ Force show notification even if paused
+    await (_audioHandler as _MyAudioHandler).showNotification(mediaItem);
+
+    // ✅ Play or pause based on flag
     if (isPlaying) {
       await _audioHandler!.play();
     } else {
       await _audioHandler!.pause();
     }
 
-    print("🎧 Restored: ${song.title}, playing: $isPlaying");
+    _currentSongController.add(_currentSong);
+
+    print("🎧 Restored: ${song.title}, playing: $isPlaying (notification forced)");
   }
 
   // ===== SAVE CURRENT SONG =====
@@ -199,12 +235,16 @@ class AudioPlayerService {
   }
 }
 
+// ===============================================================
+// 🔽 INTERNAL HANDLER
+// ===============================================================
 class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AudioPlayer _player;
   _MyAudioHandler(this._player) {
     _notifyAudioPlayerEvents();
   }
 
+  // ✅ Listen to player events and update notification
   void _notifyAudioPlayerEvents() {
     _player.playerStateStream.listen((state) {
       playbackState.add(playbackState.value.copyWith(
@@ -213,7 +253,6 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           state.playing ? MediaControl.pause : MediaControl.play,
           MediaControl.skipToNext,
           MediaControl.stop,
-
         ],
         systemActions: const {
           MediaAction.seek,
@@ -234,6 +273,33 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         speed: _player.speed,
       ));
     });
+  }
+
+  // ✅ Force-show notification even if playback is paused
+  Future<void> showNotification(MediaItem item) async {
+    mediaItem.add(item);
+    playbackState.add(
+      PlaybackState(
+        controls: [
+          MediaControl.skipToPrevious,
+          MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.stop,
+        ],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+        },
+        androidCompactActionIndices: const [0, 1, 2],
+        processingState: AudioProcessingState.ready,
+        playing: false,
+        updatePosition: Duration.zero,
+        bufferedPosition: Duration.zero,
+        speed: 1.0,
+      ),
+    );
+    print("🔔 Notification forced (paused state)");
   }
 
   @override
