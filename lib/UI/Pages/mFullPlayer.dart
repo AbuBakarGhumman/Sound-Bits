@@ -7,6 +7,7 @@ import '../../Services/audio_player_service.dart';
 import '../../Services/volume_controller_service.dart';
 import '../../Models/song_object.dart';
 import '../../Services/engine_service.dart';
+import '../Components/track_item.dart'; // Import TrackItem
 
 class FullPlayerPage extends StatefulWidget {
   final Song song;
@@ -14,6 +15,8 @@ class FullPlayerPage extends StatefulWidget {
   final VoidCallback onPlayPause;
   final VoidCallback onNext;
   final VoidCallback onPrevious;
+  final List<Song>? queue;
+  final String? folder;
 
   const FullPlayerPage({
     super.key,
@@ -22,6 +25,8 @@ class FullPlayerPage extends StatefulWidget {
     required this.onPlayPause,
     required this.onNext,
     required this.onPrevious,
+    this.queue,
+    this.folder,
   });
 
   @override
@@ -40,9 +45,12 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
   Duration totalDuration = Duration.zero;
 
   Song? currentSong;
+  List<Song> currentQueue = [];
   bool isPlayingLocal = false;
 
-  StreamSubscription<Song?>? _nowPlayingSub;
+  bool showQueue = false; // ✅ toggle queue visibility
+
+  StreamSubscription<NowPlayingData>? _nowPlayingSub;
   StreamSubscription<PlayerState>? _playerStateSub;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
@@ -53,9 +61,15 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
 
     currentSong = widget.song;
     isPlayingLocal = widget.isPlaying;
+    currentQueue = widget.queue ?? [];
 
-    _nowPlayingSub = _engine.nowPlayingStream.listen((song) {
-      if (mounted && song != null) setState(() => currentSong = song);
+    _nowPlayingSub = _engine.nowPlayingStream.listen((data) {
+      if (mounted) {
+        setState(() {
+          currentSong = data.currentSong;
+          currentQueue = data.queue;
+        });
+      }
     });
 
     _playerStateSub = _engine.playerStateStream.listen((state) {
@@ -134,16 +148,22 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: isDark
+            ? const Color(0xFF1C1C1E)
+            : Colors.white, // Solid color, no transparency
+        elevation: 0, // Remove shadow
+        scrolledUnderElevation: 0, // Prevent color change on scroll
+        surfaceTintColor: Colors.transparent, // Prevent automatic tint overlay
         leading: IconButton(
           icon: Icon(Icons.keyboard_arrow_down_rounded, size: w(32)),
           color: isDark ? Colors.white70 : Colors.black87,
           onPressed: () => Navigator.pop(context),
         ),
         centerTitle: true,
-        title: Text("Now Playing",
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: fs(18))),
+        title: Text(
+          "Now Playing",
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: fs(18)),
+        ),
         actions: [
           IconButton(
             icon: Icon(Icons.volume_up_rounded, size: w(28)),
@@ -157,81 +177,133 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
           ),
         ],
       ),
+
       body: Padding(
         padding: EdgeInsets.symmetric(horizontal: w(20), vertical: h(15)),
         child: Column(
           children: [
             SizedBox(height: h(20)),
 
-            // ✅ Album Art / Thumbnail
-            ClipRRect(
-              borderRadius: BorderRadius.circular(w(20)),
-              child: Container(
-                height: screenWidth * 0.75,
-                width: screenWidth * 0.75,
-                color: Colors.black12,
-                child: currentSong != null && currentSong!.thumbnail != null
-                    ? Image.memory(
-                  currentSong!.thumbnail!, // Uint8List
-                  fit: BoxFit.cover,
+            // ✅ Conditional display — either album art + title OR queue list
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: showQueue
+                    ? ListView.builder(
+                  key: const ValueKey('queueView'),
+                  itemCount: currentQueue.length,
+                  itemBuilder: (context, index) {
+                    final song = currentQueue[index];
+                    return TrackItem(
+                      songTitle: song.title,
+                      artistName: song.artist,
+                      isDark: isDark,
+                      thumbnail: song.thumbnail,
+                      isSelected: currentSong?.uri == song.uri,
+                      isPlaying: currentSong?.uri == song.uri && isPlayingLocal,
+                      onTap: () {
+                        _engine.playFromFolder(
+                          songs: currentQueue,
+                          index: index,
+                          folderName: widget.folder ?? "Unknown",
+                        );
+                      },
+                      onMoreTap: () {},
+                    );
+                  },
                 )
-                    : Icon(Icons.music_note, size: w(100), color: Colors.grey),
-              ),
-            ),
+                    : Column(
+                  key: const ValueKey('mainView'),
+                  children: [
+                    // Thumbnail
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(w(20)),
+                      child: Container(
+                        height: MediaQuery.of(context).size.width * 0.75,
+                        width: MediaQuery.of(context).size.width * 0.75,
+                        color: Colors.black12,
+                        child: currentSong != null &&
+                            currentSong!.thumbnail != null
+                            ? Image.memory(
+                          currentSong!.thumbnail!,
+                          fit: BoxFit.cover,
+                        )
+                            : Icon(Icons.music_note,
+                            size: w(100), color: Colors.grey),
+                      ),
+                    ),
+                    SizedBox(height: h(25)),
 
+                    // Title / Marquee
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: w(20)),
+                      child: SizedBox(
+                        height: h(30),
+                        child: currentSong != null &&
+                            currentSong!.title.length > 25
+                            ? Marquee(
+                          text: currentSong!.title,
+                          style: TextStyle(
+                              fontSize: fs(22),
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? Colors.white
+                                  : Colors.black),
+                          blankSpace: w(40),
+                          velocity: 35.0,
+                          pauseAfterRound:
+                          const Duration(seconds: 1),
+                          startPadding: w(10),
+                          accelerationDuration:
+                          const Duration(seconds: 1),
+                          decelerationDuration:
+                          const Duration(milliseconds: 500),
+                        )
+                            : Text(
+                          currentSong?.title ?? "",
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: fs(22),
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? Colors.white
+                                  : Colors.black),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: h(6)),
 
-            SizedBox(height: h(25)),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: w(20)),
-              child: SizedBox(
-                height: h(30),
-                child: currentSong != null && currentSong!.title.length > 25
-                    ? Marquee(
-                  text: currentSong!.title,
-                  style: TextStyle(
-                      fontSize: fs(22),
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black),
-                  blankSpace: w(40),
-                  velocity: 35.0,
-                  pauseAfterRound: const Duration(seconds: 1),
-                  startPadding: w(10),
-                  accelerationDuration: const Duration(seconds: 1),
-                  decelerationDuration:
-                  const Duration(milliseconds: 500),
-                )
-                    : Text(
-                  currentSong?.title ?? "",
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: fs(22),
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : Colors.black),
+                    // Artist
+                    Text(
+                      currentSong == null ||
+                          currentSong!.artist.isEmpty ||
+                          currentSong!.artist == "<unknown>"
+                          ? "Unknown Artist"
+                          : currentSong!.artist,
+                      style: TextStyle(
+                          fontSize: fs(15),
+                          color:
+                          isDark ? Colors.white70 : Colors.black54),
+                    ),
+                  ],
                 ),
               ),
             ),
-            SizedBox(height: h(6)),
-            Text(
-              currentSong == null ||
-                  currentSong!.artist.isEmpty ||
-                  currentSong!.artist == "<unknown>"
-                  ? "Unknown Artist"
-                  : currentSong!.artist,
-              style: TextStyle(
-                  fontSize: fs(15),
-                  color: isDark ? Colors.white70 : Colors.black54),
-            ),
-            SizedBox(height: h(45)),
 
+            // ✅ Bottom controls stay always visible
+            SizedBox(height: h(20)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 IconButton(
-                    icon: Icon(Icons.queue_music, size: w(28)),
-                    color: Colors.grey,
-                    onPressed: () {}),
+                  icon: Icon(Icons.queue_music, size: w(28)),
+                  color: showQueue ? color :  Colors.grey,
+                  onPressed: () {
+                    setState(() => showQueue = !showQueue);
+                  },
+                ),
                 IconButton(
                     icon: Icon(
                         isFavorite ? Icons.favorite : Icons.favorite_border,
@@ -245,11 +317,14 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
               ],
             ),
 
+            // ✅ Keep slider & controls visible even in queue view
             SizedBox(height: h(20)),
             Slider(
-              value: currentPosition.inMilliseconds
-                  .toDouble()
-                  .clamp(0.0, totalDuration.inMilliseconds.toDouble().clamp(0.0, 999999999.0)),
+              value: currentPosition.inMilliseconds.toDouble().clamp(
+                  0.0,
+                  totalDuration.inMilliseconds
+                      .toDouble()
+                      .clamp(0.0, 999999999.0)),
               max: totalDuration.inMilliseconds.toDouble() == 0
                   ? 1
                   : totalDuration.inMilliseconds.toDouble(),
@@ -276,8 +351,7 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                 ],
               ),
             ),
-
-            SizedBox(height: h(30)),
+            SizedBox(height: h(20)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [

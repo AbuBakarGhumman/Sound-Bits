@@ -73,13 +73,15 @@ class _MMainNavBarState extends State<MMainNavBar>
   PermissionStatusState _permissionStatus = PermissionStatusState.checking;
 
   final EngineService _engine = EngineService();
-  StreamSubscription<Song?>? _nowPlayingSubscription;
+  StreamSubscription<NowPlayingData>? _nowPlayingSubscription; // updated
   StreamSubscription<PlayerState>? _playerStateSubscription;
 
   int _selectedIndex = 0;
   Song? _currentlyPlayingSong;
+  List<Song> _currentQueue = [];// full queue
   bool _isPlaying = false;
   final bool _showNowPlayingBar = true;
+  String? _currentFolderName;
 
   // ✅ For TracksListPage management
   String? _currentTrackListTitle;
@@ -103,8 +105,14 @@ class _MMainNavBarState extends State<MMainNavBar>
   }
 
   void _listenToEngineStreams() {
-    _nowPlayingSubscription = _engine.nowPlayingStream.listen((song) {
-      if (mounted) setState(() => _currentlyPlayingSong = song);
+    _nowPlayingSubscription = _engine.nowPlayingStream.listen((data) {
+      if (mounted) {
+        setState(() {
+          _currentlyPlayingSong = data.currentSong;
+          _currentQueue = data.queue;
+          _currentFolderName = data.folderName;
+        });
+      }
     });
     _playerStateSubscription = _engine.playerStateStream.listen((state) {
       if (mounted) setState(() => _isPlaying = state.playing);
@@ -153,6 +161,7 @@ class _MMainNavBarState extends State<MMainNavBar>
       if (mounted) {
         setState(() {
           _currentlyPlayingSong = _engine.currentSong;
+          _currentQueue = _engine.currentQueue;
           _isPlaying = _engine.isPlaying;
         });
       }
@@ -201,9 +210,6 @@ class _MMainNavBarState extends State<MMainNavBar>
   void _skipPrevious() => _engine.skipPrevious();
 
   Future<void> _handleAppExit() async {
-    //await _engine.pause();
-    //await _engine.saveCurrentSession();
-    //await _engine.dispose();
     SystemNavigator.pop();
   }
 
@@ -283,12 +289,12 @@ class _MMainNavBarState extends State<MMainNavBar>
                       isPlaying: _isPlaying,
                       onPlaySong: _onPlaySong,
                       onGoHome: () => setState(() => _selectedIndex = 0),
-                      onOpenTrackList: _onOpenTrackList, // ✅ pass callback
+                      onOpenTrackList: _onOpenTrackList,
                     ),
                     const MDrivePage(),
                     if (_currentTrackListTitle != null)
                       TracksListPage(
-                        name:"Library",
+                        name: "Library",
                         title: _currentTrackListTitle!,
                         tracks: _currentTrackListSongs,
                         currentlyPlayingSong: _currentlyPlayingSong,
@@ -323,6 +329,9 @@ class _MMainNavBarState extends State<MMainNavBar>
                               onPlayPause: _togglePlayPause,
                               onNext: _skipNext,
                               onPrevious: _skipPrevious,
+                              queue: _currentQueue,
+                              folder: _currentFolderName
+                              // ✅ pass full queue
                             ),
                           ),
                         );
@@ -336,13 +345,11 @@ class _MMainNavBarState extends State<MMainNavBar>
               backgroundColor: isDark ? Colors.black : Colors.white,
               elevation: 0,
               selectedItemColor: const Color(0xFFD8512B),
-              unselectedItemColor:
-              isDark ? Colors.white70 : Colors.black87,
+              unselectedItemColor: isDark ? Colors.white70 : Colors.black87,
               currentIndex: _selectedIndex > 3 ? 2 : _selectedIndex,
               onTap: _onItemTapped,
               showUnselectedLabels: true,
-              selectedLabelStyle:
-              const TextStyle(fontWeight: FontWeight.w500),
+              selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
               unselectedLabelStyle:
               const TextStyle(fontWeight: FontWeight.w500),
               items: const [
