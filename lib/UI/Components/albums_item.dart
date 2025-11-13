@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-class FolderItem extends StatelessWidget {
+class AlbumsItem extends StatelessWidget {
   final String folderName;
-  final int trackCount;
+  final String trackCount;
   final bool isDark;
   final VoidCallback onTap;
 
-  const FolderItem({
+  const AlbumsItem({
     super.key,
     required this.folderName,
     required this.trackCount,
@@ -34,7 +34,7 @@ class FolderItem extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12.0),
                   ),
                   child: Icon(
-                    Icons.folder_rounded,
+                    Icons.album_rounded,
                     size: 28.0,
                     color: isDark ? Colors.white : Colors.black,
                   ),
@@ -55,7 +55,7 @@ class FolderItem extends StatelessWidget {
                       ),
                       const SizedBox(height: 2.0),
                       Text(
-                        '$trackCount tracks',
+                        '$trackCount',
                         style: TextStyle(
                           color: isDark ? Colors.white : Colors.black,
                           fontSize: 13,
@@ -66,10 +66,10 @@ class FolderItem extends StatelessWidget {
                 ),
 
                 // 3. Trailing chevron icon
-                Icon(
+                /*Icon(
                   Icons.more_vert,
                   color: isDark ? Colors.white54 : Colors.black45,
-                ),
+                ),*/
               ],
             ),
           ),

@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 class Song {
   final String title;       // Song name
   final String artist;      // Artist name
   final String uri;         // Full file path (used for playback)
   final String? album;      // Optional album name
-  final String? thumbnail;  // Optional album art (can be file path or base64)
+  final Uint8List? thumbnail;
+  final int? dateAdded;// Optional album art (can be file path or base64)
 
   const Song({
     required this.title,
@@ -11,6 +14,7 @@ class Song {
     required this.uri,
     this.album,
     this.thumbnail,
+    this.dateAdded
   });
 
   // Convert to Map (for local storage or JSON)
@@ -21,6 +25,7 @@ class Song {
       'uri': uri,
       'album': album,
       'thumbnail': thumbnail,
+      'dateAdded': dateAdded
     };
   }
 
@@ -32,6 +37,7 @@ class Song {
       uri: map['uri'] ?? '',
       album: map['album'],
       thumbnail: map['thumbnail'],
+      dateAdded: map['dateAdded']
     );
   }
 

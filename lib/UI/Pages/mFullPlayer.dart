@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:marquee/marquee.dart';
-
 import '../../Services/audio_player_service.dart';
 import '../../Services/volume_controller_service.dart';
 import '../../Models/song_object.dart';
@@ -128,9 +127,8 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
 
-    // Responsive scaling factors
-    double w(double value) => value * screenWidth / 400; // base width 400
-    double h(double value) => value * screenHeight / 800; // base height 800
+    double w(double value) => value * screenWidth / 400;
+    double h(double value) => value * screenHeight / 800;
     double fs(double value) => value * screenWidth / 400;
 
     return Scaffold(
@@ -164,15 +162,24 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
         child: Column(
           children: [
             SizedBox(height: h(20)),
+
+            // ✅ Album Art / Thumbnail
             ClipRRect(
               borderRadius: BorderRadius.circular(w(20)),
               child: Container(
                 height: screenWidth * 0.75,
                 width: screenWidth * 0.75,
                 color: Colors.black12,
-                child: Icon(Icons.music_note, size: w(100), color: Colors.grey),
+                child: currentSong != null && currentSong!.thumbnail != null
+                    ? Image.memory(
+                  currentSong!.thumbnail!, // Uint8List
+                  fit: BoxFit.cover,
+                )
+                    : Icon(Icons.music_note, size: w(100), color: Colors.grey),
               ),
             ),
+
+
             SizedBox(height: h(25)),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: w(20)),
@@ -190,7 +197,8 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                   pauseAfterRound: const Duration(seconds: 1),
                   startPadding: w(10),
                   accelerationDuration: const Duration(seconds: 1),
-                  decelerationDuration: const Duration(milliseconds: 500),
+                  decelerationDuration:
+                  const Duration(milliseconds: 500),
                 )
                     : Text(
                   currentSong?.title ?? "",
@@ -211,10 +219,12 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                   currentSong!.artist == "<unknown>"
                   ? "Unknown Artist"
                   : currentSong!.artist,
-              style:
-              TextStyle(fontSize: fs(15), color: isDark ? Colors.white70 : Colors.black54),
+              style: TextStyle(
+                  fontSize: fs(15),
+                  color: isDark ? Colors.white70 : Colors.black54),
             ),
             SizedBox(height: h(45)),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -223,7 +233,8 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                     color: Colors.grey,
                     onPressed: () {}),
                 IconButton(
-                    icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border,
+                    icon: Icon(
+                        isFavorite ? Icons.favorite : Icons.favorite_border,
                         size: w(28)),
                     color: isFavorite ? const Color(0xFF8C0D0D) : Colors.grey,
                     onPressed: toggleFavorite),
@@ -233,6 +244,7 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                     onPressed: () {}),
               ],
             ),
+
             SizedBox(height: h(20)),
             Slider(
               value: currentPosition.inMilliseconds
@@ -254,18 +266,24 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(formatTime(currentPosition),
-                      style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: fs(13))),
+                      style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black54,
+                          fontSize: fs(13))),
                   Text(formatTime(totalDuration),
-                      style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: fs(13))),
+                      style: TextStyle(
+                          color: isDark ? Colors.white70 : Colors.black54,
+                          fontSize: fs(13))),
                 ],
               ),
             ),
+
             SizedBox(height: h(30)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 IconButton(
-                    icon: Icon(Icons.shuffle_rounded, color: isShuffle ? color : Colors.grey),
+                    icon: Icon(Icons.shuffle_rounded,
+                        color: isShuffle ? color : Colors.grey),
                     iconSize: w(28),
                     onPressed: toggleShuffle),
                 IconButton(
@@ -288,7 +306,9 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                     onPressed: handleNext),
                 IconButton(
                   icon: Icon(
-                    repeatMode == 2 ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                    repeatMode == 2
+                        ? Icons.repeat_one_rounded
+                        : Icons.repeat_rounded,
                     color: repeatMode == 0 ? Colors.grey : color,
                   ),
                   iconSize: w(28),

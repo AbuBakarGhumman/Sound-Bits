@@ -148,8 +148,9 @@ class TracksListPage extends StatelessWidget {
                     songTitle: song.title,
                     artistName: (song.artist == "<unknown>" ||
                         song.artist.trim().isEmpty)
-                        ? "Unknown"
+                        ? "Unknown Artist"
                         : song.artist,
+                    thumbnail: song.thumbnail,
                     isDark: isDark,
                     isSelected: isSelected,
                     isPlaying: isSelected && isPlaying,

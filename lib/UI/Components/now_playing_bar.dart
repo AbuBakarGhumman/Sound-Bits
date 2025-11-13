@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:marquee/marquee.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../Models/song_object.dart'; // ✅ Import Song object
 
 class NowPlayingBar extends StatefulWidget {
@@ -35,6 +37,8 @@ class _NowPlayingBarState extends State<NowPlayingBar>
   bool _pendingCollapsed = false;
   bool _pendingCollapseToRight = false;
 
+  File? _thumbnailFile;
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +50,8 @@ class _NowPlayingBarState extends State<NowPlayingBar>
     if (widget.isPlaying) {
       _controller.repeat();
     }
+
+    _prepareThumbnail();
   }
 
   @override
@@ -56,6 +62,31 @@ class _NowPlayingBarState extends State<NowPlayingBar>
       _controller.repeat();
     } else if (!widget.isPlaying && _controller.isAnimating) {
       _controller.stop();
+    }
+
+    if (oldWidget.song.thumbnail != widget.song.thumbnail) {
+      _prepareThumbnail();
+    }
+  }
+
+  Future<void> _prepareThumbnail() async {
+    if (widget.song.thumbnail == null || widget.song.thumbnail!.isEmpty) {
+      _thumbnailFile = null;
+      setState(() {});
+      return;
+    }
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/${widget.song.title.hashCode}.jpg');
+      await file.writeAsBytes(widget.song.thumbnail!);
+      setState(() {
+        _thumbnailFile = file;
+      });
+    } catch (e) {
+      print("❌ Failed to create thumbnail file: $e");
+      _thumbnailFile = null;
+      setState(() {});
     }
   }
 
@@ -111,9 +142,9 @@ class _NowPlayingBarState extends State<NowPlayingBar>
           // Album art
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: widget.song.thumbnail != null
-                ? Image.network(
-              widget.song.thumbnail!,
+            child: _thumbnailFile != null
+                ? Image.file(
+              _thumbnailFile!,
               width: screenWidth * 0.12,
               height: screenWidth * 0.12,
               fit: BoxFit.cover,
@@ -221,9 +252,7 @@ class _NowPlayingBarState extends State<NowPlayingBar>
           borderRadius: BorderRadius.circular(16),
           child: AnimatedAlign(
             alignment: _isCollapsed
-                ? (_collapseToRight
-                ? Alignment.centerRight
-                : Alignment.centerLeft)
+                ? (_collapseToRight ? Alignment.centerRight : Alignment.centerLeft)
                 : Alignment.center,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeInOutCubic,
@@ -251,8 +280,7 @@ class _NowPlayingBarState extends State<NowPlayingBar>
                                 Color(0xFFD8512B),
                               ],
                               stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
-                              transform: GradientRotation(
-                                  _controller.value * 2 * math.pi),
+                              transform: GradientRotation(_controller.value * 2 * math.pi),
                             ),
                           ),
                           child: child,

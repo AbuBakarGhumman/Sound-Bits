@@ -75,15 +75,28 @@ class MusicService {
       }
 
       // 🔄 Convert SongModel → Song object
-      final List<Song> songs = songModels.map((song) {
+      final List<Song> songs = await Future.wait(songModels.map((songModel) async {
+        Uint8List? artwork;
+        try {
+          artwork = await _audioQuery.queryArtwork(
+            songModel.id,
+            ArtworkType.AUDIO,
+          );
+        } catch (e) {
+          print("❌ Error fetching artwork for ${songModel.title}: $e");
+          artwork = null;
+        }
+
         return Song(
-          title: song.title,
-          artist: song.artist ?? "Unknown Artist",
-          uri: song.data, // full file path
-          album: song.album ?? "Unknown Album",
-          thumbnail: null, // artwork can be queried separately when needed
+          title: songModel.title,
+          artist: songModel.artist ?? "Unknown Artist",
+          uri: songModel.data,
+          album: songModel.album ?? "Unknown Album",
+          thumbnail: artwork, // 🎯 Assign artwork bytes
+          dateAdded: songModel.dateAdded,
         );
-      }).toList();
+      }));
+
 
       return songs;
     } catch (e) {
@@ -131,6 +144,27 @@ class MusicService {
     print("💿 Processed songs into ${albums.length} albums.");
     return albums;
   }
+
+  // ✅ Fetch songs grouped by artist (returns Map<String, List<Song>>)
+  Future<Map<String, List<Song>>> fetchArtists() async {
+    final allSongs = await fetchSongs();
+    if (allSongs.isEmpty) {
+      print("⚠️ No songs found, so no artists will be returned.");
+      return {};
+    }
+
+    final Map<String, List<Song>> artists = {};
+    for (var song in allSongs) {
+      final artistName = (song.artist != null && song.artist!.trim().isNotEmpty)
+          ? song.artist!
+          : "Unknown Artist";
+      artists.putIfAbsent(artistName, () => []).add(song);
+    }
+
+    print("🎤 Processed songs into ${artists.length} artists.");
+    return artists;
+  }
+
 
   void exitApp() {
     SystemNavigator.pop();

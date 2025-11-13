@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../Models/song_object.dart';
 
@@ -47,6 +50,20 @@ class AudioPlayerService {
 
   AudioHandler? get handler => _audioHandler;
 
+  // ===== HELPER: Save thumbnail bytes to temporary file =====
+  Future<String?> _getThumbnailPath(Uint8List? thumbnail) async {
+    if (thumbnail == null || thumbnail.isEmpty) return null;
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await file.writeAsBytes(thumbnail);
+      return file.path;
+    } catch (e) {
+      print("❌ Failed to save thumbnail: $e");
+      return null;
+    }
+  }
+
   // ===== PLAY SINGLE SONG =====
   Future<void> play(Song song) async {
     _currentSong = song;
@@ -56,14 +73,14 @@ class AudioPlayerService {
       return;
     }
 
+    final artUriPath = await _getThumbnailPath(song.thumbnail);
+
     final mediaItem = MediaItem(
       id: song.uri,
       title: song.title,
       artist: song.artist == "<unknown>" ? "Unknown Artist" : song.artist,
       album: song.album ?? "Unknown Album",
-      artUri: song.thumbnail != null && song.thumbnail!.isNotEmpty
-          ? Uri.parse(song.thumbnail!)
-          : null,
+      artUri: artUriPath != null ? Uri.file(artUriPath) : null,
     );
 
     await (_audioHandler as _MyAudioHandler).updateMediaItem(mediaItem);
@@ -78,20 +95,19 @@ class AudioPlayerService {
     _currentSong = songs[startIndex];
 
     final playlist = ConcatenatingAudioSource(
-      children: songs.map((s) {
+      children: await Future.wait(songs.map((s) async {
+        final artUriPath = await _getThumbnailPath(s.thumbnail);
         return AudioSource.uri(
           Uri.parse(s.uri),
           tag: MediaItem(
             id: s.uri,
             title: s.title,
-            artist: s.artist == "<unknown>" ? "UnKnown Artist": s.artist,
+            artist: s.artist == "<unknown>" ? "Unknown Artist" : s.artist,
             album: s.album ?? "Unknown Album",
-            artUri: s.thumbnail != null && s.thumbnail!.isNotEmpty
-                ? Uri.parse(s.thumbnail!)
-                : null,
+            artUri: artUriPath != null ? Uri.file(artUriPath) : null,
           ),
         );
-      }).toList(),
+      })),
     );
 
     await _player.setAudioSource(playlist, initialIndex: startIndex);
@@ -124,8 +140,16 @@ class AudioPlayerService {
 
   // ===== REPEAT MODE =====
   Future<void> setRepeatMode(int mode) async {
-    await _player.setLoopMode(LoopMode.off);
-    print("🔁 Repeat mode (manual): $mode");
+    if (mode == 2) {
+      await _player.setLoopMode(LoopMode.one);
+      print("🔁 Repeat mode (one song): $mode");
+    } else if (mode == 1) {
+      await _player.setLoopMode(LoopMode.all);
+      print("🔁 Repeat mode (all songs): $mode");
+    } else {
+      await _player.setLoopMode(LoopMode.off);
+      print("🔁 Repeat mode (off, play to the end): $mode");
+    }
   }
 
   // ===== RESTORE LAST SONG (Show notification even if paused) =====
@@ -133,38 +157,34 @@ class AudioPlayerService {
     _currentSong = song;
     if (_audioHandler == null) return;
 
-    // ✅ Build MediaItem
+    final artUriPath = await _getThumbnailPath(song.thumbnail);
+
     final mediaItem = MediaItem(
       id: song.uri,
       title: song.title,
-      artist: song.artist == "<unknown>" ? "Unknown Artist": song.artist,
+      artist: song.artist == "<unknown>" ? "Unknown Artist" : song.artist,
       album: song.album ?? "Unknown Album",
-      artUri: song.thumbnail != null && song.thumbnail!.isNotEmpty
-          ? Uri.parse(song.thumbnail!)
-          : null,
+      artUri: artUriPath != null ? Uri.file(artUriPath) : null,
     );
 
-    // ✅ Restore queue if available
     if (_currentQueue.isNotEmpty) {
       final playlist = ConcatenatingAudioSource(
-        children: _currentQueue.map((s) {
+        children: await Future.wait(_currentQueue.map((s) async {
+          final artUriPath = await _getThumbnailPath(s.thumbnail);
           return AudioSource.uri(
             Uri.parse(s.uri),
             tag: MediaItem(
               id: s.uri,
               title: s.title,
-              artist: s.artist=="<unknown>"? "UnKnown Artist": s.artist,
+              artist: s.artist == "<unknown>" ? "Unknown Artist" : s.artist,
               album: s.album ?? "Unknown Album",
-              artUri: s.thumbnail != null && s.thumbnail!.isNotEmpty
-                  ? Uri.parse(s.thumbnail!)
-                  : null,
+              artUri: artUriPath != null ? Uri.file(artUriPath) : null,
             ),
           );
-        }).toList(),
+        })),
       );
 
-      final currentIndex =
-      _currentQueue.indexWhere((s) => s.uri == song.uri);
+      final currentIndex = _currentQueue.indexWhere((s) => s.uri == song.uri);
       await _player.setAudioSource(
         playlist,
         initialIndex: currentIndex >= 0 ? currentIndex : 0,
@@ -173,10 +193,8 @@ class AudioPlayerService {
       await (_audioHandler as _MyAudioHandler).updateMediaItem(mediaItem);
     }
 
-    // ✅ Force show notification even if paused
     await (_audioHandler as _MyAudioHandler).showNotification(mediaItem);
 
-    // ✅ Play or pause based on flag
     if (isPlaying) {
       await _audioHandler!.play();
     } else {
@@ -184,7 +202,6 @@ class AudioPlayerService {
     }
 
     _currentSongController.add(_currentSong);
-
     print("🎧 Restored: ${song.title}, playing: $isPlaying (notification forced)");
   }
 
@@ -244,9 +261,20 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _notifyAudioPlayerEvents();
   }
 
-  // ✅ Listen to player events and update notification
+  // ✅ Listen to player events and update notification safely
   void _notifyAudioPlayerEvents() {
-    _player.playerStateStream.listen((state) {
+    _player.playerStateStream.listen((state) async {
+      if (state.processingState == ProcessingState.completed) {
+        print("🛑 Song completed – waiting for Engine decision (no auto skip)");
+        await _player.pause();
+        await _player.seek(Duration.zero);
+        playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.ready,
+          playing: false,
+        ));
+        return;
+      }
+
       playbackState.add(playbackState.value.copyWith(
         controls: [
           MediaControl.skipToPrevious,
@@ -265,7 +293,6 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           ProcessingState.loading: AudioProcessingState.loading,
           ProcessingState.buffering: AudioProcessingState.buffering,
           ProcessingState.ready: AudioProcessingState.ready,
-          ProcessingState.completed: AudioProcessingState.completed,
         }[state.processingState]!,
         playing: state.playing,
         updatePosition: _player.position,

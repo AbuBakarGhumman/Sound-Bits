@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+/*import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import '../../Constants/app_constants.dart';
 import '../../Models/song_object.dart';
@@ -90,30 +90,25 @@ class _MLibraryPageState extends State<MLibraryPage> {
     super.dispose();
   }
 
-  void _sortByOldestFirst() {
-    // Implement sorting by oldest first (e.g., sorting by date or any other criteria)
-    print("Sorting by Oldest First");
-    // Sort your data here and update the UI accordingly
+  void _sortByOldestFirst(List<Song> list) {
+    list.sort((a, b) => a.dateAdded.compareTo(b.dateAdded));
+    setState(() {}); // Trigger UI update
   }
 
-  void _sortByNewestFirst() {
-    // Implement sorting by newest first
-    print("Sorting by Newest First");
-    // Sort your data here and update the UI accordingly
+  void _sortByNewestFirst(List<Song> list) {
+    list.sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
+    setState(() {}); // Trigger UI update
   }
 
-  void _sortByAToZ() {
-    // Implement sorting from A to Z
-    print("Sorting A to Z");
-    // Sort your data here and update the UI accordingly
+  void _sortByAToZ(List<Song> list) {
+    list.sort((a, b) => a.title.compareTo(b.title));
+    setState(() {}); // Trigger UI update
   }
 
-  void _sortByZToA() {
-    // Implement sorting from Z to A
-    print("Sorting Z to A");
-    // Sort your data here and update the UI accordingly
+  void _sortByZToA(List<Song> list) {
+    list.sort((a, b) => b.title.compareTo(a.title));
+    setState(() {}); // Trigger UI update
   }
-
 
   void _handleScrollEnd() {
     final screenCenter = MediaQuery.of(context).size.width / 2;
@@ -214,6 +209,17 @@ class _MLibraryPageState extends State<MLibraryPage> {
 
             final songs = snapshot.data!;
 
+            // Apply sorting based on selected option
+            if (_selectedSortOption == 'Oldest First') {
+              _sortByOldestFirst(songs);
+            } else if (_selectedSortOption == 'Newest First') {
+              _sortByNewestFirst(songs);
+            } else if (_selectedSortOption == 'A to Z') {
+              _sortByAToZ(songs);
+            } else if (_selectedSortOption == 'Z to A') {
+              _sortByZToA(songs);
+            }
+
             return ListView.builder(
               key: const ValueKey('tracks_list'),
               padding: const EdgeInsets.only(top: 12.0, bottom: 90.0),
@@ -228,7 +234,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   (song.artist == "<unknown>" || song.artist.trim().isEmpty)
                       ? "Unknown Artist"
                       : song.artist,
-                  thumbnail: song.thumbnail,
                   isDark: isDark,
                   isSelected: isSelected,
                   isPlaying: isSelected && widget.isPlaying,
@@ -277,7 +282,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
             );
           },
         );
-        /*return FutureBuilder<Map<String, List<Song>>>(
+    /*return FutureBuilder<Map<String, List<Song>>>(
           future: _albumsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -359,7 +364,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
             );
           },
         );
-        /*return FutureBuilder<Map<String, List<Song>>>(
+    /*return FutureBuilder<Map<String, List<Song>>>(
           future: _artistsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -438,7 +443,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
             );
           },
         );
-
       default:
         return Center(child: Text("$sectionTitle will be implemented here."));
     }
@@ -483,7 +487,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                     child: InkWell(
                       customBorder: const CircleBorder(),
                       onTap: () async {
-                        final value = await showMenu<String>(
+                        final value = await showMenu<String>(  // Show sorting options
                           context: context,
                           position: RelativeRect.fromLTRB(
                             screenWidth - 50,
@@ -631,56 +635,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
             const SizedBox(height: 10),
             SizedBox(
               height: 45,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  if (notification is ScrollEndNotification &&
-                      !_isAutoScrolling) {
-                    Future.delayed(const Duration(milliseconds: 100), () {
-                      if (!_isAutoScrolling && mounted) _handleScrollEnd();
-                    });
-                  }
-                  return true;
-                },
-                child: ListView.builder(
-                  controller: _scrollController,
-                  scrollDirection: Axis.horizontal,
-                  padding:
-                  EdgeInsets.symmetric(horizontal: screenWidth / 2 - 60),
-                  itemCount: tabs.length,
-                  itemBuilder: (context, index) {
-                    final isSelected = index == selectedIndex;
-                    return GestureDetector(
-                      key: _tabKeys[index],
-                      onTap: () {
-                        setState(() {
-                          previousIndex = selectedIndex;
-                          selectedIndex = index;
-                        });
-                        _centerSelectedTab(index);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 15),
-                        alignment: Alignment.center,
-                        child: AnimatedDefaultTextStyle(
-                          duration: const Duration(milliseconds: 200),
-                          style: TextStyle(
-                            fontSize: isSelected ? 22 : 16,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            color: isSelected
-                                ? (isDark ? Colors.white : Colors.black)
-                                : (isDark
-                                ? Colors.white54
-                                : Colors.black54),
-                          ),
-                          child: Text(tabs[index]),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+              child: NotificationListener<ScrollNotification>(...),
             ),
             const SizedBox(height: 20),
             Expanded(
@@ -690,19 +645,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                 onHorizontalDragEnd: _onHorizontalDragEnd,
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 350),
-                  transitionBuilder: (child, animation) {
-                    final offsetAnimation = Tween<Offset>(begin: slideFromRight
-                        ? const Offset(1.0, 0.0)
-                        : const Offset(-1.0, 0.0),
-                        end: Offset.zero).animate(CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeInOut,
-                    ));
-                    return SlideTransition(
-                      position: offsetAnimation,
-                      child: FadeTransition(opacity: animation, child: child),
-                    );
-                  },
+                  transitionBuilder: (child, animation) { ... },
                   child: Container(
                     key: ValueKey<int>(selectedIndex),
                     decoration: BoxDecoration(
@@ -729,5 +672,4 @@ class _MLibraryPageState extends State<MLibraryPage> {
       ),
     );
   }
-
-}
+}*/
