@@ -70,7 +70,6 @@ class MusicService {
         ignoreCase: true,
       );
 
-      print("✅ Found ${songModels.length} songs on the device.");
       if (songModels.isEmpty) {
       }
 
@@ -111,7 +110,6 @@ class MusicService {
   Future<Map<String, List<Song>>> fetchFolders() async {
     final allSongs = await fetchSongs();
     if (allSongs.isEmpty) {
-      print("⚠️ No songs found, so no folders will be returned.");
       return {};
     }
 
@@ -120,8 +118,6 @@ class MusicService {
       final directoryPath = p.dirname(song.uri);
       folders.putIfAbsent(directoryPath, () => []).add(song);
     }
-
-    print("📂 Processed songs into ${folders.length} folders.");
     return folders;
   }
 
@@ -129,7 +125,6 @@ class MusicService {
   Future<Map<String, List<Song>>> fetchAlbums() async {
     final allSongs = await fetchSongs();
     if (allSongs.isEmpty) {
-      print("⚠️ No songs found, so no albums will be returned.");
       return {};
     }
 
@@ -140,8 +135,6 @@ class MusicService {
           : "Unknown Album";
       albums.putIfAbsent(albumName, () => []).add(song);
     }
-
-    print("💿 Processed songs into ${albums.length} albums.");
     return albums;
   }
 
@@ -149,7 +142,6 @@ class MusicService {
   Future<Map<String, List<Song>>> fetchArtists() async {
     final allSongs = await fetchSongs();
     if (allSongs.isEmpty) {
-      print("⚠️ No songs found, so no artists will be returned.");
       return {};
     }
 
@@ -160,8 +152,6 @@ class MusicService {
           : "Unknown Artist";
       artists.putIfAbsent(artistName, () => []).add(song);
     }
-
-    print("🎤 Processed songs into ${artists.length} artists.");
     return artists;
   }
 

@@ -1,12 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../Models/song_object.dart';
+import 'db_service.dart';
 
 /// Singleton service integrating audio_service + just_audio
 class AudioPlayerService {
@@ -48,28 +48,57 @@ class AudioPlayerService {
     });
   }
 
+  Future<void> playFilePath(String filePath) async {
+    try {
+      final filePlayer = AudioPlayer(); // Separate player instance
+      await filePlayer.setFilePath(filePath);
+      await filePlayer.play();
+
+      // Optional: listen for completion and dispose automatically
+      filePlayer.playerStateStream.listen((state) async {
+        if (state.processingState == ProcessingState.completed) {
+          await filePlayer.dispose();
+        }
+      });
+    } catch (e) {
+      print("⚠️ Error playing file $filePath: $e");
+    }
+  }
+
   AudioHandler? get handler => _audioHandler;
 
   // ===== HELPER: Save thumbnail bytes to temporary file =====
   Future<String?> _getThumbnailPath(Uint8List? thumbnail) async {
-    if (thumbnail == null || thumbnail.isEmpty) return null;
     try {
       final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await file.writeAsBytes(thumbnail);
+
+      // If a real thumbnail exists → save and return it
+      if (thumbnail != null && thumbnail.isNotEmpty) {
+        final file = File('${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
+        await file.writeAsBytes(thumbnail);
+        return file.path;
+      }
+
+      // No thumbnail → use default image
+      final defaultImage = await rootBundle.load('Asserts/Thumbnail.jpeg');
+      final defaultBytes = defaultImage.buffer.asUint8List();
+
+      final file = File('${dir.path}/default_art.jpg');
+      await file.writeAsBytes(defaultBytes, flush: true);
       return file.path;
+
     } catch (e) {
-      print("❌ Failed to save thumbnail: $e");
+      print("⚠️ Failed to load thumbnail, returning null → $e");
       return null;
     }
   }
+
 
   // ===== PLAY SINGLE SONG =====
   Future<void> play(Song song) async {
     _currentSong = song;
 
     if (_audioHandler == null) {
-      print("⚠️ AudioHandler not initialized yet");
       return;
     }
 
@@ -80,12 +109,11 @@ class AudioPlayerService {
       title: song.title,
       artist: song.artist == "<unknown>" ? "Unknown Artist" : song.artist,
       album: song.album ?? "Unknown Album",
-      artUri: artUriPath != null ? Uri.file(artUriPath) : null,
+      artUri: artUriPath != null ? Uri.file(artUriPath) : null, // <-- FIXED
     );
 
     await (_audioHandler as _MyAudioHandler).updateMediaItem(mediaItem);
     await _audioHandler!.play();
-    print("🎶 Now Playing: ${song.title}");
   }
 
   // ===== PLAY QUEUE (for skip support) =====
@@ -104,7 +132,7 @@ class AudioPlayerService {
             title: s.title,
             artist: s.artist == "<unknown>" ? "Unknown Artist" : s.artist,
             album: s.album ?? "Unknown Album",
-            artUri: artUriPath != null ? Uri.file(artUriPath) : null,
+            artUri: artUriPath != null ? Uri.file(artUriPath) : null, // <-- FIXED
           ),
         );
       })),
@@ -115,21 +143,18 @@ class AudioPlayerService {
 
     // ✅ Trigger initial song broadcast
     _currentSongController.add(_currentSong);
-    print("🎧 Playing queue (index: $startIndex)");
   }
 
   // ===== PAUSE =====
   Future<void> pause() async {
     if (_audioHandler == null) return;
     await _audioHandler!.pause();
-    print("⏸️ AudioPlayerService: Paused");
   }
 
   // ===== RESUME =====
   Future<void> resume() async {
     if (_audioHandler == null) return;
     await _audioHandler!.play();
-    print("▶️ AudioPlayerService: Resumed");
   }
 
   // ===== SEEK =====
@@ -142,13 +167,10 @@ class AudioPlayerService {
   Future<void> setRepeatMode(int mode) async {
     if (mode == 2) {
       await _player.setLoopMode(LoopMode.one);
-      print("🔁 Repeat mode (one song): $mode");
     } else if (mode == 1) {
       await _player.setLoopMode(LoopMode.all);
-      print("🔁 Repeat mode (all songs): $mode");
     } else {
       await _player.setLoopMode(LoopMode.off);
-      print("🔁 Repeat mode (off, play to the end): $mode");
     }
   }
 
@@ -202,43 +224,36 @@ class AudioPlayerService {
     }
 
     _currentSongController.add(_currentSong);
-    print("🎧 Restored: ${song.title}, playing: $isPlaying (notification forced)");
   }
 
   // ===== SAVE CURRENT SONG =====
+  // ===== SAVE CURRENT SONG SESSION =====
   Future<void> saveCurrentSong({List<Song>? queue, String? folderName}) async {
     if (_currentSong == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    final songMap = _currentSong!.toMap();
-    final saveMap = {
-      'song': songMap,
-      'queue': (queue ?? [_currentSong!]).map((s) => s.toMap()).toList(),
-      'folderName': folderName ?? "Unknown",
-    };
-    await prefs.setString('lastPlayedSong', jsonEncode(saveMap));
-    print("💾 Session saved for: ${songMap['title']}");
+
+    try {
+      //await DBHelper.instance.clearSession();
+
+      await DBHelper.instance.saveSession(
+        currentSong: _currentSong!,
+        queue: queue ?? [_currentSong!],
+        folderName: folderName ?? "Unknown",
+      );
+    } catch (e) {
+      print("⚠️ Error saving session: $e");
+    }
   }
 
-  // ===== RESTORE SAVED SESSION =====
+// ===== RESTORE SAVED SESSION =====
   Future<Map<String, dynamic>?> getRestoredSongData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? jsonStr = prefs.getString('lastPlayedSong');
-    if (jsonStr != null) {
-      try {
-        final Map<String, dynamic> map = jsonDecode(jsonStr);
-        final Song restoredSong = Song.fromMap(map['song']);
-        final List<Song> restoredQueue =
-        (map['queue'] as List<dynamic>).map((s) => Song.fromMap(s)).toList();
-        return {
-          'song': restoredSong,
-          'queue': restoredQueue,
-          'folderName': map['folderName'] ?? "Unknown",
-        };
-      } catch (e) {
-        print("⚠️ Error decoding saved song: $e");
-        await prefs.remove('lastPlayedSong');
-        return null;
+    try {
+      final sessionData = await DBHelper.instance.getSession();
+
+      if (sessionData != null) {
+        return sessionData;
       }
+    } catch (e) {
+      print("⚠️ Error restoring session: $e");
     }
     return null;
   }
@@ -248,7 +263,6 @@ class AudioPlayerService {
     await _audioHandler?.stop();
     await _player.dispose();
     await _currentSongController.close();
-    print("🧹 AudioPlayerService: Disposed");
   }
 }
 
@@ -265,7 +279,6 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void _notifyAudioPlayerEvents() {
     _player.playerStateStream.listen((state) async {
       if (state.processingState == ProcessingState.completed) {
-        print("🛑 Song completed – waiting for Engine decision (no auto skip)");
         await _player.pause();
         await _player.seek(Duration.zero);
         playbackState.add(playbackState.value.copyWith(
@@ -326,7 +339,6 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         speed: 1.0,
       ),
     );
-    print("🔔 Notification forced (paused state)");
   }
 
   @override
@@ -356,4 +368,24 @@ class _MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       AudioSource.uri(Uri.parse(item.id), tag: item),
     );
   }
+
+  // ===== PLAY AUDIO FILE DIRECTLY (Separate Player, Does NOT affect app's main player) =====
+  Future<void> playFilePath(String filePath) async {
+    try {
+      final filePlayer = AudioPlayer(); // Separate player instance
+      await filePlayer.setFilePath(filePath);
+      await filePlayer.play();
+
+      // Optional: listen for completion and dispose automatically
+      filePlayer.playerStateStream.listen((state) async {
+        if (state.processingState == ProcessingState.completed) {
+          await filePlayer.dispose();
+        }
+      });
+    } catch (e) {
+      print("⚠️ Error playing file $filePath: $e");
+    }
+  }
+
+
 }

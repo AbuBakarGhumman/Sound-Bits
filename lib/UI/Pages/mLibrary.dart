@@ -10,6 +10,7 @@ import '../Components/artists_item.dart';
 import '../Components/folder_item.dart';
 import '../Components/track_item.dart';
 import '../Components/splash_title.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MLibraryPage extends StatefulWidget {
   final Song? currentlyPlayingSong;
@@ -38,7 +39,9 @@ class _MLibraryPageState extends State<MLibraryPage> {
   final ScrollController _scrollController = ScrollController();
   int selectedIndex = 1;
   int previousIndex = 1;
+
   String? _selectedSortOption;
+  String? _selectedFavSortOption;
 
   final MusicService _musicService = MusicService();
 
@@ -67,9 +70,42 @@ class _MLibraryPageState extends State<MLibraryPage> {
   void initState() {
     super.initState();
     _tabKeys = List.generate(tabs.length, (_) => GlobalKey());
+    _loadSortSettings();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _centerSelectedTab(selectedIndex);
     });
+  }
+
+  Future<void> _loadSortSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedSortOption = prefs.getString('tracks_sort_option') ?? 'A to Z';
+      _selectedFavSortOption = prefs.getString('favourites_sort_option') ?? 'A to Z';
+    });
+  }
+
+  Future<void> _saveSortSetting(String section, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(section == 'Tracks' ? 'tracks_sort_option' : 'favourites_sort_option', value);
+  }
+
+  List<Song> _applySorting(List<Song> songs, String? sortOption) {
+    List<Song> sorted = List.from(songs);
+    switch (sortOption) {
+      case 'Oldest First':
+        sorted.sort((a, b) => (a.dateAdded ?? 0).compareTo(b.dateAdded ?? 0));
+        break;
+      case 'Newest First':
+        sorted.sort((a, b) => (b.dateAdded ?? 0).compareTo(a.dateAdded ?? 0));
+        break;
+      case 'A to Z':
+        sorted.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      case 'Z to A':
+        sorted.sort((a, b) => b.title.toLowerCase().compareTo(a.title.toLowerCase()));
+        break;
+    }
+    return sorted;
   }
 
   @override
@@ -89,31 +125,6 @@ class _MLibraryPageState extends State<MLibraryPage> {
     _scrollController.dispose();
     super.dispose();
   }
-
-  void _sortByOldestFirst() {
-    // Implement sorting by oldest first (e.g., sorting by date or any other criteria)
-    print("Sorting by Oldest First");
-    // Sort your data here and update the UI accordingly
-  }
-
-  void _sortByNewestFirst() {
-    // Implement sorting by newest first
-    print("Sorting by Newest First");
-    // Sort your data here and update the UI accordingly
-  }
-
-  void _sortByAToZ() {
-    // Implement sorting from A to Z
-    print("Sorting A to Z");
-    // Sort your data here and update the UI accordingly
-  }
-
-  void _sortByZToA() {
-    // Implement sorting from Z to A
-    print("Sorting Z to A");
-    // Sort your data here and update the UI accordingly
-  }
-
 
   void _handleScrollEnd() {
     final screenCenter = MediaQuery.of(context).size.width / 2;
@@ -203,16 +214,13 @@ class _MLibraryPageState extends State<MLibraryPage> {
           future: _tracksFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text("Error: ${snapshot.error}"));
+              return const Center(child: CircularProgressIndicator(color: Color(0xFFD8512B)));
             }
             if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return const Center(child: Text("No songs found on device."));
             }
 
-            final songs = snapshot.data!;
+            final songs = _applySorting(snapshot.data!, _selectedSortOption);
 
             return ListView.builder(
               key: const ValueKey('tracks_list'),
@@ -224,8 +232,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
 
                 return TrackItem(
                   songTitle: song.title,
-                  artistName:
-                  (song.artist == "<unknown>" || song.artist.trim().isEmpty)
+                  artistName: (song.artist == "<unknown>" || song.artist.trim().isEmpty)
                       ? "Unknown Artist"
                       : song.artist,
                   thumbnail: song.thumbnail,
@@ -235,12 +242,13 @@ class _MLibraryPageState extends State<MLibraryPage> {
                   onTap: () {
                     widget.onPlaySong(song, songs, 'All Tracks', index);
                   },
-                  onMoreTap: () {print("More tapped");},
+                  onMoreTap: () {},
                 );
               },
             );
           },
         );
+
 
       case 'Albums':
         return FutureBuilder<Map<String, List<Song>>>(
@@ -483,6 +491,11 @@ class _MLibraryPageState extends State<MLibraryPage> {
                     child: InkWell(
                       customBorder: const CircleBorder(),
                       onTap: () async {
+                        final isTracks = tabs[selectedIndex] == 'Tracks';
+                        final isFavs = tabs[selectedIndex] == 'Favourites';
+                        final currentSort =
+                        isTracks ? _selectedSortOption : _selectedFavSortOption;
+
                         final value = await showMenu<String>(
                           context: context,
                           position: RelativeRect.fromLTRB(
@@ -508,7 +521,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       Text(
                                         "Oldest First",
                                         style: TextStyle(
-                                          color: _selectedSortOption == 'Oldest First'
+                                          color: currentSort == 'Oldest First'
                                               ? const Color(0xFFD8512B)
                                               : (isDark ? Colors.white : Colors.black),
                                           fontWeight: FontWeight.bold,
@@ -516,7 +529,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       ),
                                     ],
                                   ),
-                                  if (_selectedSortOption == 'Oldest First')
+                                  if (currentSort == 'Oldest First')
                                     const Icon(Icons.check, color: Color(0xFFD8512B), size: 20),
                                 ],
                               ),
@@ -532,7 +545,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       Text(
                                         "Newest First",
                                         style: TextStyle(
-                                          color: _selectedSortOption == 'Newest First'
+                                          color: currentSort == 'Newest First'
                                               ? const Color(0xFFD8512B)
                                               : (isDark ? Colors.white : Colors.black),
                                           fontWeight: FontWeight.bold,
@@ -540,7 +553,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       ),
                                     ],
                                   ),
-                                  if (_selectedSortOption == 'Newest First')
+                                  if (currentSort == 'Newest First')
                                     const Icon(Icons.check, color: Color(0xFFD8512B), size: 20),
                                 ],
                               ),
@@ -556,7 +569,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       Text(
                                         "A to Z",
                                         style: TextStyle(
-                                          color: _selectedSortOption == 'A to Z'
+                                          color: currentSort == 'A to Z'
                                               ? const Color(0xFFD8512B)
                                               : (isDark ? Colors.white : Colors.black),
                                           fontWeight: FontWeight.bold,
@@ -564,7 +577,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       ),
                                     ],
                                   ),
-                                  if (_selectedSortOption == 'A to Z')
+                                  if (currentSort == 'A to Z')
                                     const Icon(Icons.check, color: Color(0xFFD8512B), size: 20),
                                 ],
                               ),
@@ -580,7 +593,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       Text(
                                         "Z to A",
                                         style: TextStyle(
-                                          color: _selectedSortOption == 'Z to A'
+                                          color: currentSort == 'Z to A'
                                               ? const Color(0xFFD8512B)
                                               : (isDark ? Colors.white : Colors.black),
                                           fontWeight: FontWeight.bold,
@@ -588,7 +601,7 @@ class _MLibraryPageState extends State<MLibraryPage> {
                                       ),
                                     ],
                                   ),
-                                  if (_selectedSortOption == 'Z to A')
+                                  if (currentSort == 'Z to A')
                                     const Icon(Icons.check, color: Color(0xFFD8512B), size: 20),
                                 ],
                               ),
@@ -598,23 +611,14 @@ class _MLibraryPageState extends State<MLibraryPage> {
 
                         if (value != null) {
                           setState(() {
-                            _selectedSortOption = value;
+                            if (isTracks) {
+                              _selectedSortOption = value;
+                            } else if (isFavs) {
+                              _selectedFavSortOption = value;
+                            }
                           });
 
-                          switch (value) {
-                            case 'Oldest First':
-                              _sortByOldestFirst();
-                              break;
-                            case 'Newest First':
-                              _sortByNewestFirst();
-                              break;
-                            case 'A to Z':
-                              _sortByAToZ();
-                              break;
-                            case 'Z to A':
-                              _sortByZToA();
-                              break;
-                          }
+                          await _saveSortSetting(isTracks ? 'Tracks' : 'Favourites', value);
                         }
                       },
                       child: Icon(

@@ -6,9 +6,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'Constants/app_constants.dart';
 import 'Models/song_object.dart';
 import 'Services/audio_player_service.dart';
+import 'Services/db_service.dart';
 import 'Services/volume_controller_service.dart';
 import 'Services/engine_service.dart';
 import 'UI/Components/now_playing_bar.dart';
@@ -30,6 +32,7 @@ Future<void> main() async {
     androidShowNotificationBadge: true,
     androidNotificationIcon: 'drawable/logo1',
   );
+  await DBHelper.instance.database;
   await AudioPlayerService().init();
   runApp(const MyApp());
 }
@@ -75,10 +78,11 @@ class _MMainNavBarState extends State<MMainNavBar>
   final EngineService _engine = EngineService();
   StreamSubscription<NowPlayingData>? _nowPlayingSubscription; // updated
   StreamSubscription<PlayerState>? _playerStateSubscription;
+  StreamSubscription? _intentDataStreamSubscription;
 
   int _selectedIndex = 0;
   Song? _currentlyPlayingSong;
-  List<Song> _currentQueue = [];// full queue
+  List<Song> _currentQueue = []; // full queue
   bool _isPlaying = false;
   final bool _showNowPlayingBar = true;
   String? _currentFolderName;
@@ -93,6 +97,7 @@ class _MMainNavBarState extends State<MMainNavBar>
     WidgetsBinding.instance.addObserver(this);
     _listenToEngineStreams();
     _checkPermissionsAndRestore();
+    _handleSharedIntents();
   }
 
   @override
@@ -117,6 +122,58 @@ class _MMainNavBarState extends State<MMainNavBar>
     _playerStateSubscription = _engine.playerStateStream.listen((state) {
       if (mounted) setState(() => _isPlaying = state.playing);
     });
+  }
+
+  Future<void> _handleSharedIntents() async {
+    // Listen while app is in memory
+    _intentDataStreamSubscription =
+        ReceiveSharingIntent.instance.getMediaStream().listen(
+              (List<SharedMediaFile> files) {
+            if (files.isNotEmpty) {
+              final filePath = files.first.path;
+              _askPlayFile(filePath);
+            }
+          },
+          onError: (err) {
+            print("Error receiving shared files: $err");
+          },
+        );
+
+    // Handle app cold start
+    final List<SharedMediaFile> initialFiles =
+    await ReceiveSharingIntent.instance.getInitialMedia();
+    if (initialFiles.isNotEmpty) {
+      final filePath = initialFiles.first.path;
+      _askPlayFile(filePath);
+
+      // Reset after handling
+      ReceiveSharingIntent.instance.reset();
+    }
+  }
+
+
+
+  void _askPlayFile(String filePath) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Open Audio File"),
+        content: Text("Do you want to play this audio in this app?\n\n${filePath.split('/').last}"),
+        actions: [
+          TextButton(
+            child: const Text("Other App"),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: const Text("This App"),
+            onPressed: () {
+              Navigator.pop(context);
+              AudioPlayerService().playFilePath(filePath);
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _checkPermissionsAndRestore() async {
@@ -179,6 +236,7 @@ class _MMainNavBarState extends State<MMainNavBar>
     WidgetsBinding.instance.removeObserver(this);
     _nowPlayingSubscription?.cancel();
     _playerStateSubscription?.cancel();
+    _intentDataStreamSubscription?.cancel();
     _engine.dispose();
     super.dispose();
   }
@@ -324,14 +382,13 @@ class _MMainNavBarState extends State<MMainNavBar>
                           context,
                           MaterialPageRoute(
                             builder: (_) => FullPlayerPage(
-                              song: _currentlyPlayingSong!,
-                              isPlaying: _isPlaying,
-                              onPlayPause: _togglePlayPause,
-                              onNext: _skipNext,
-                              onPrevious: _skipPrevious,
-                              queue: _currentQueue,
-                              folder: _currentFolderName
-                              // ✅ pass full queue
+                                song: _currentlyPlayingSong!,
+                                isPlaying: _isPlaying,
+                                onPlayPause: _togglePlayPause,
+                                onNext: _skipNext,
+                                onPrevious: _skipPrevious,
+                                queue: _currentQueue,
+                                folder: _currentFolderName
                             ),
                           ),
                         );

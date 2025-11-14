@@ -221,14 +221,14 @@ class _FullPlayerPageState extends State<FullPlayerPage> {
                       child: Container(
                         height: MediaQuery.of(context).size.width * 0.75,
                         width: MediaQuery.of(context).size.width * 0.75,
-                        color: Colors.black12,
+                        color: Colors.black26,
                         child: currentSong != null &&
                             currentSong!.thumbnail != null
                             ? Image.memory(
                           currentSong!.thumbnail!,
                           fit: BoxFit.cover,
                         )
-                            : Icon(Icons.music_note,
+                            : Icon(Icons.music_note_rounded,
                             size: w(100), color: Colors.grey),
                       ),
                     ),

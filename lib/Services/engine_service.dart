@@ -112,11 +112,14 @@ class EngineService {
   // ===== Restore last session =====
   Future<void> restoreLastSession() async {
     final restoredData = await _audioService.getRestoredSongData();
-    if (restoredData == null) return;
+    if (restoredData == null) {
+      return;}
+    final Song restoredSong = restoredData['currentSong'] as Song;
+    final restoredQueue = (restoredData['queue'] as List)
+        .where((e) => e != null)
+        .map((e) => e as Song)
+        .toList();
 
-    final Song restoredSong = restoredData['song'] as Song;
-    final List<Song> restoredQueue =
-    List<Song>.from(restoredData['queue'] as List<dynamic>).cast<Song>();
     final String restoredFolder =
         restoredData['folderName'] as String? ?? "Unknown";
 
@@ -124,9 +127,6 @@ class EngineService {
     _currentIndex = restoredQueue.indexWhere((s) => s.uri == restoredSong.uri);
     _currentFolder = restoredFolder;
     _currentSong = restoredSong;
-
-    if (_currentIndex < 0) _currentIndex = 0;
-
     await _audioService.restoreSong(restoredSong);
     _nowPlayingController.add(NowPlayingData(
       currentSong: restoredSong,
@@ -262,7 +262,6 @@ class EngineService {
   }
 
   Future<void> saveCurrentSession() async {
-    print("EngineService: Saving current session...");
     await _audioService.saveCurrentSong(queue: _currentQueue, folderName: _currentFolder);
   }
 
@@ -270,6 +269,5 @@ class EngineService {
     if (!_nowPlayingController.isClosed) await _nowPlayingController.close();
     if (!_playerStateController.isClosed) await _playerStateController.close();
     await _audioService.dispose();
-    print("EngineService: Disposed.");
   }
 }
