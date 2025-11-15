@@ -6,7 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+//import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'Constants/app_constants.dart';
 import 'Models/song_object.dart';
 import 'Services/audio_player_service.dart';
@@ -97,7 +97,7 @@ class _MMainNavBarState extends State<MMainNavBar>
     WidgetsBinding.instance.addObserver(this);
     _listenToEngineStreams();
     _checkPermissionsAndRestore();
-    _handleSharedIntents();
+    //_handleSharedIntents();
   }
 
   @override
@@ -124,7 +124,7 @@ class _MMainNavBarState extends State<MMainNavBar>
     });
   }
 
-  Future<void> _handleSharedIntents() async {
+  /*Future<void> _handleSharedIntents() async {
     // Listen while app is in memory
     _intentDataStreamSubscription =
         ReceiveSharingIntent.instance.getMediaStream().listen(
@@ -149,11 +149,11 @@ class _MMainNavBarState extends State<MMainNavBar>
       // Reset after handling
       ReceiveSharingIntent.instance.reset();
     }
-  }
+  }*/
 
 
 
-  void _askPlayFile(String filePath) {
+  /*void _askPlayFile(String filePath) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -174,7 +174,7 @@ class _MMainNavBarState extends State<MMainNavBar>
         ],
       ),
     );
-  }
+  }*/
 
   Future<void> _checkPermissionsAndRestore() async {
     PermissionStatus statusManage = PermissionStatus.denied;

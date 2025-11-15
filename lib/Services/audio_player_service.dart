@@ -48,7 +48,7 @@ class AudioPlayerService {
     });
   }
 
-  Future<void> playFilePath(String filePath) async {
+  /*Future<void> playFilePath(String filePath) async {
     try {
       final filePlayer = AudioPlayer(); // Separate player instance
       await filePlayer.setFilePath(filePath);
@@ -63,7 +63,7 @@ class AudioPlayerService {
     } catch (e) {
       print("⚠️ Error playing file $filePath: $e");
     }
-  }
+  }*/
 
   AudioHandler? get handler => _audioHandler;
 
